@@ -1,0 +1,12 @@
+node_modules
+dist
+# dados pessoais: estado do app, conexões da Pluggy, logs e backups
+data/
+# credenciais
+.env
+.env.*
+!.env.example
+# arquivos locais (extratos, comprovantes, capturas de tela)
+arquivos_bancos/
+.playwright-mcp/
+*.log
