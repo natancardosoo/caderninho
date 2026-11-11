@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, CheckCircle2, Pencil } from 'lucide-react';
+import { Plus, CheckCircle2, Pencil, ChevronDown, Send, Check } from 'lucide-react';
 import { useApp } from './store.jsx';
-import { Who, SplitEditor } from './people.jsx';
+import { Who, SplitEditor, Avatar } from './people.jsx';
 import { Modal, Money, ChipSvg, ContactlessSvg, Empty, Field, MoneyInput, Segmented, Check3 } from './ui.jsx';
 import {
-  BANKS, invoiceItems, invoiceTotal, invoiceStatus, cardUsed, brl, monthName, parseMk, dateOf, fmtDate, daysUntil, invoiceClosingDate, parseMoney, currentMk, num, sharesOf, applyShares,
+  BANKS, invoiceItems, invoiceTotal, invoiceStatus, cardUsed, brl, monthName, parseMk, dateOf, fmtDate, daysUntil, invoiceClosingDate, parseMoney, currentMk, num, sharesOf, applyShares, invoiceSplit,
 } from './lib.js';
 
 export function BankLogo({ bank, small }) {
@@ -204,5 +204,107 @@ function BillPayModal({ item, M, onClose }) {
         <label className="toggle-line"><Check3 checked={paid} onChange={setPaid} /> Já foi paga em {monthName(M).toLowerCase()}</label>
       </div>
     </Modal>
+  );
+}
+
+// ---------- quem paga a fatura ----------
+const ddmm = (M, day) => `${String(day).padStart(2, '0')}/${String(parseMk(M).m + 1).padStart(2, '0')}`;
+
+function splitText(g, M) {
+  const { y } = parseMk(M);
+  const fmt = (i) => `• ${i.desc}${i.inst && i.inst !== 'mensal' ? ` (${i.inst})` : ''}${i.shared ? ` (sua parte de ${brl(i.full)})` : ''}: ${brl(i.amount)}`;
+  const now = g.items.filter((i) => !i.later && !i.received);
+  const later = g.items.filter((i) => i.later);
+  const parts = [`Oi, ${g.person.name}! Sua parte na fatura de ${monthName(M).toLowerCase()}/${y}:`];
+  if (now.length) parts.push(`\nPara agora (vence ${ddmm(M, now[0].dueDay)}):\n${now.map(fmt).join('\n')}\nTotal: ${brl(g.monthlyOpen)}`);
+  if (later.length) parts.push(`\nEntra no saldo sem prazo${Object.keys(g.groups).length === 1 ? ` (${Object.keys(g.groups)[0]})` : ''}:\n${later.map(fmt).join('\n')}\nTotal: ${brl(g.later)}`);
+  return parts.join('\n');
+}
+
+// o que a pessoa "deve" nesta fatura, do jeito mais direto possível
+const headline = (g) => (g.monthlyOpen > 0 ? ['te devolve', g.monthlyOpen] : g.later > 0 && g.monthly === 0 ? ['soma no saldo', g.later] : ['já te devolveu', g.monthly]);
+
+// barra + uma linha por pessoa: "Mãe · R$ 637,42 na fatura de novembro"
+export function InvoiceSplit({ M, cardId, compact, onOpen }) {
+  const { state } = useApp();
+  const [open, setOpen] = useState(null);
+  const [copied, setCopied] = useState(null);
+  const sp = invoiceSplit(state, M, cardId);
+  if (!sp.people.length) return compact ? null : (
+    <section className="card inv-split"><div className="sec-head"><span>Quem paga a fatura de {monthName(M).toLowerCase()}</span></div><Empty>Ninguém divide esta fatura com você.</Empty></section>
+  );
+  const segs = [{ id: 'me', name: 'Você', color: 'var(--blue)', v: sp.me }, ...sp.people.map((g) => ({ id: g.person.id, name: g.person.name, color: g.person.color, v: g.total }))].filter((x) => x.v > 0);
+  const bar = (
+    <div className="is-bar" title={segs.map((x) => `${x.name}: ${brl(x.v)}`).join(' · ')}>
+      {segs.map((x) => <i key={x.id} style={{ flexGrow: x.v, background: x.color }} />)}
+    </div>
+  );
+  if (compact)
+    return (
+      <div className="inv-split compact" onClick={onOpen} role={onOpen ? 'button' : undefined}>
+        {bar}
+        {sp.people.map((g) => {
+          const [verb, v] = headline(g);
+          return (
+            <div key={g.person.id} className="is-line">
+              <Avatar person={g.person} size={18} />
+              <span className="grow"><b>{g.person.name}</b> {verb}</span>
+              <b className="nowrap">{brl(v)}</b>
+            </div>
+          );
+        })}
+      </div>
+    );
+  const share = async (g) => {
+    const text = splitText(g, M);
+    try {
+      if (navigator.share && /Android|iPhone|iPad/i.test(navigator.userAgent)) { await navigator.share({ text }); return; }
+      await navigator.clipboard.writeText(text);
+    } catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove(); }
+    setCopied(g.person.id); setTimeout(() => setCopied(null), 1800);
+  };
+  return (
+    <section className="card inv-split">
+      <div className="sec-head"><span>Quem paga a fatura de {monthName(M).toLowerCase()}</span><span>total <b>{brl(sp.total)}</b></span></div>
+      {bar}
+      <div className="is-legend">{segs.map((x) => <span key={x.id}><i style={{ background: x.color }} />{x.name} {brl(x.v)}</span>)}</div>
+      <div className="is-people">
+        {sp.people.map((g) => {
+          const isOpen = open === g.person.id;
+          const due = g.items.find((i) => !i.later)?.dueDay ?? sp.dueDay;
+          return (
+            <div key={g.person.id} className="is-person" style={{ '--pc': g.person.color }}>
+              <button className="is-head" onClick={() => setOpen(isOpen ? null : g.person.id)}>
+                <Avatar person={g.person} size={34} />
+                <span className="grow">
+                  <b>{g.person.name}</b>
+                  <small>{g.items.length} compra{g.items.length > 1 ? 's' : ''} nesta fatura</small>
+                </span>
+                <span className="is-amt"><b>{brl(g.total)}</b><ChevronDown size={16} className="muted" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }} /></span>
+              </button>
+              <div className="is-tags">
+                {g.monthly > 0 && (g.monthlyOpen > 0
+                  ? <span className="is-tag due">Te devolve até {ddmm(M, due)}: <b>{brl(g.monthlyOpen)}</b></span>
+                  : <span className="is-tag ok"><Check size={12} strokeWidth={3} /> Já te devolveu {brl(g.monthly)}</span>)}
+                {Object.entries(g.groups).map(([k, v]) => <span key={k} className="is-tag later">Soma no saldo sem prazo{k !== 'sem grupo' ? ` · ${k}` : ''}: <b>{brl(v)}</b></span>)}
+              </div>
+              {isOpen && (
+                <div className="list is-items">
+                  {g.items.map((i) => (
+                    <div key={i.id} className={`list-row ${i.received ? 'paid' : ''}`}>
+                      <span className="grow"><b>{i.desc}</b><small>{fmtDate(i.date)}{i.inst ? ` · ${i.inst === 'mensal' ? 'assinatura' : i.inst}` : ''}{i.shared ? ` · parte de ${brl(i.full)}` : ''} · {i.later ? 'sem prazo' : i.received ? 'recebido' : 'devolve no mês'}{state.cards.length > 1 ? ` · ${i.cardName}` : ''}</small></span>
+                      <b className="nowrap">{brl(i.amount)}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="btn-row">
+                <button className="btn small" onClick={() => share(g)}>{copied === g.person.id ? <><Check size={15} /> Copiado</> : <><Send size={15} /> Mandar resumo</>}</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

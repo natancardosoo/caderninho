@@ -166,6 +166,36 @@ export function invoiceItems(state, card, M) {
 }
 export const invoiceTotal = (state, card, M) => round2(invoiceItems(state, card, M).reduce((s, i) => s + i.part, 0));
 
+// quem paga cada pedaço das faturas que vencem em M (todos os cartões, ou só cardId)
+// por pessoa: monthly = te devolve até o vencimento; later = vai pro saldo sem prazo (por grupo)
+export function invoiceSplit(state, M, cardId) {
+  const cards = state.cards.filter((c) => !cardId || c.id === cardId);
+  const byId = new Map();
+  let total = 0, me = 0;
+  for (const c of cards)
+    for (const i of invoiceItems(state, c, M)) {
+      total += i.part;
+      for (const sh of sharesOf(i)) {
+        const amount = round2(i.part * sh.share);
+        if (sh.id === 'me') { me += amount; continue; }
+        if (!byId.has(sh.id)) byId.set(sh.id, { person: personOf(state, sh.id) || { id: sh.id, name: 'Alguém', color: '#64748b' }, total: 0, monthly: 0, monthlyOpen: 0, later: 0, groups: {}, items: [] });
+        const g = byId.get(sh.id);
+        const later = isLater(i);
+        const received = !later && isPaid(state, M, `recv:${i.id}:${sh.id}`);
+        g.total += amount;
+        if (later) { g.later += amount; const k = i.debtGroup || 'sem grupo'; g.groups[k] = (g.groups[k] || 0) + amount; }
+        else { g.monthly += amount; if (!received) g.monthlyOpen += amount; }
+        g.items.push({ id: i.id, desc: i.desc, inst: i.inst, date: i.date, amount, full: i.part, shared: sh.share < 1, later, received, group: i.debtGroup, cardName: c.name, dueDay: c.dueDay });
+      }
+    }
+  const people = [...byId.values()].map((g) => ({
+    ...g, total: round2(g.total), monthly: round2(g.monthly), monthlyOpen: round2(g.monthlyOpen), later: round2(g.later),
+    groups: Object.fromEntries(Object.entries(g.groups).map(([k, v]) => [k, round2(v)])),
+  })).sort((a, b) => b.total - a.total);
+  const dueDay = cards.length ? Math.min(...cards.map((c) => c.dueDay)) : null;
+  return { total: round2(total), me: round2(me), people, dueDay };
+}
+
 export function invoiceClosingDate(card, M) {
   const closeMonth = card.dueDay > card.closingDay ? M : addMonths(M, -1);
   return dateOf(closeMonth, card.closingDay);

@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, ChevronRight } from 'lucide-react';
 import { useApp } from '../store.jsx';
 import { Money, Empty } from '../ui.jsx';
-import { BankLogo, BankCard, useInvoiceModal } from '../components.jsx';
+import { BankLogo, BankCard, useInvoiceModal, InvoiceSplit } from '../components.jsx';
 import { PageHead } from './Fluxo.jsx';
 import { BANKS, invoiceTotal, invoiceItems, invoiceStatus, invoiceClosingDate, cardUsed, daysUntil, brl, monthName, MONTHS_SHORT, parseMk, addMonths } from '../lib.js';
 
@@ -16,6 +16,7 @@ export default function Cartoes() {
         <button className="btn primary small" onClick={() => openForm('purchase')}><Plus size={15} /> Compra</button>
         <button className="btn small" onClick={() => openForm('card')}><Plus size={15} /> Cartão</button>
       </PageHead>
+      {state.cards.length > 0 && <InvoiceSplit M={M} />}
       {state.cards.length === 0 && <section className="card"><Empty>Cadastre seu primeiro cartão para acompanhar faturas e parcelas.</Empty></section>}
       <div className="cards-grid">
         {state.cards.map((c) => {

@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ArrowUpRight, ArrowDownRight, Pencil, ChevronLeft, ChevronRight, Check, ArrowRight } from 'lucide-react';
 import { useApp } from '../store.jsx';
 import { Money, Icon3D, Check3, Segmented, BillIcon, Empty, WalletIllustration } from '../ui.jsx';
-import { BankCard, useInvoiceModal, dueText } from '../components.jsx';
+import { BankCard, useInvoiceModal, dueText, InvoiceSplit } from '../components.jsx';
 import {
   monthSummary, payables, brl, num, pct, monthName, monthShort, addMonths, parseMk, invoiceTotal, invoiceStatus,
   billsForMonth, reserveTotal, reserveEntries, currentMk, dateOf, daysUntil, receivablesByPerson, personName, isMine, peopleIn, MONTHS_SHORT,
@@ -184,7 +184,7 @@ function DistribuicaoCard({ M, list: all }) {
 }
 
 function CartoesCard({ M }) {
-  const { state, openForm, setM } = useApp();
+  const { state, openForm, setM, go } = useApp();
   const [idx, setIdx] = useState(0);
   const [invNode, openInv] = useInvoiceModal();
   const cards = state.cards;
@@ -212,6 +212,7 @@ function CartoesCard({ M }) {
       </div>
       <small className="label">Fatura de {monthName(M).toLowerCase()}</small>
       <Money v={vals[0]} size="lg" />
+      <InvoiceSplit compact M={M} onOpen={() => go('/cartoes')} />
       <div className="cart-actions">
         <button className="btn small" onClick={() => openInv(card.id, M)}>Ver fatura</button>
         <div className="arrows">
