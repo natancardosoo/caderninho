@@ -1,6 +1,8 @@
-# Solo Finn
+<p align="center"><img src="public/app-icon-192.png" width="96" alt="" /></p>
 
-App de finanças pessoais para uma pessoa só, feito para rodar no seu próprio computador. Seus dados ficam num arquivo local (`data/state.json`): não tem conta, nuvem nem servidor de terceiros.
+# Caderninho
+
+O velho caderninho de contas, em versão app: finanças pessoais para uma pessoa só, rodando no seu próprio computador. Seus dados ficam num arquivo local (`data/state.json`): não tem conta, nuvem nem servidor de terceiros.
 
 ## O que ele faz
 
@@ -8,7 +10,7 @@ App de finanças pessoais para uma pessoa só, feito para rodar no seu próprio 
 - **Fluxo de caixa:** tudo que entra e sai, dia a dia, com marcação de pago/recebido.
 - **Cartões:** compras parceladas, assinaturas e a fatura de cada mês (com fechamento e vencimento).
 - **Contas fixas:** aluguel, luz, internet etc., com valor estimado e ajuste mês a mês.
-- **Quem paga?:** divida contas, compras e Pix com outras pessoas. O app calcula o que cada uma te deve, mês a mês ou como saldo sem prazo (ex.: um empréstimo ou uma obra).
+- **Quem paga?:** divida contas, compras e Pix com outras pessoas. O app calcula o que cada uma te deve, mês a mês ou como saldo sem prazo (ex.: um empréstimo ou uma obra). Cada fatura mostra quanto cada pessoa deve nela, com um resumo pronto para mandar.
 - **Reserva, renda e financiamento da casa.**
 - **Bancos conectados (opcional):** importação automática via Open Finance com a [Pluggy](https://pluggy.ai) (Meu Pluggy), com uma fila para você revisar o que chegou.
 
@@ -19,8 +21,8 @@ Funciona no navegador e pode ser instalado como app (PWA) no celular.
 Precisa do [Node.js](https://nodejs.org) 20.12 ou mais novo (recomendado 22+).
 
 ```bash
-git clone https://github.com/natancardosoo/solo-finn.git
-cd solo-finn
+git clone https://github.com/natancardosoo/caderninho.git
+cd caderninho
 npm install
 npm run build
 npm start

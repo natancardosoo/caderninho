@@ -1,4 +1,4 @@
-// Gera os PNGs do ícone do app a partir dos SVGs em public/ (rode: node scripts-gerar-icones.mjs)
+// Gera os PNGs do ícone do app a partir dos SVGs em public/ (rode: node scripts/gerar-icones.mjs)
 import fs from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 const jobs = [

@@ -33,16 +33,11 @@ const NAV2 = [
 const PAGES = { '/': Dashboard, '/fluxo': Fluxo, '/cartoes': Cartoes, '/casa': Casa, '/reserva': Reserva, '/renda': Renda, '/contas': Contas, '/receber': Receber, '/bancos': Bancos };
 
 function Brand() {
-  const { state } = useApp();
-  const initial = (state.profile.name || 'V').trim()[0].toUpperCase();
   return (
     <div className="brand">
-      <div className="avatars">
-        <span className="av blue">{initial}</span>
-        <span className="av green">$</span>
-      </div>
+      <img className="brand-logo" src="/favicon.svg?v=3" alt="" width={36} height={36} />
       <div>
-        <b>Solo Finn</b>
+        <b>Caderninho</b>
         <small>Finanças pessoais</small>
       </div>
     </div>
