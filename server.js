@@ -77,4 +77,4 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-server.listen(PORT, '127.0.0.1', () => console.log(`Finanças rodando em http://127.0.0.1:${PORT}`));
+server.listen(PORT, '127.0.0.1', () => console.log(`Caderninho rodando em http://127.0.0.1:${PORT}`));

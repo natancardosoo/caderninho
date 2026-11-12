@@ -20,6 +20,8 @@ Funciona no navegador e pode ser instalado como app (PWA) no celular.
 
 Precisa do [Node.js](https://nodejs.org) 20.12 ou mais novo (recomendado 22+).
 
+Clone o repositório (ou faça um fork e clone o seu, para guardar suas próprias mudanças):
+
 ```bash
 git clone https://github.com/natancardosoo/caderninho.git
 cd caderninho
@@ -28,7 +30,7 @@ npm run build
 npm start
 ```
 
-Abra http://127.0.0.1:4320. Na primeira vez o app abre com **dados de exemplo** para você explorar; em **Minha renda** há a opção de apagar o exemplo e começar do zero.
+Abra http://127.0.0.1:4320 (para usar outra porta: `PORT=4400 npm start`). Na primeira vez o app abre com **dados de exemplo** para você explorar; em **Minha renda** há a opção de apagar o exemplo e começar do zero.
 
 Para desenvolver com recarregamento automático, deixe `npm start` rodando e, em outro terminal, rode `npm run dev` (o Vite repassa `/api` para o servidor).
 
