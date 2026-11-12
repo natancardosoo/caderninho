@@ -12,7 +12,7 @@ O velho caderninho de contas, em versão app: finanças pessoais para uma pessoa
 - **Contas fixas:** aluguel, luz, internet etc., com valor estimado e ajuste mês a mês.
 - **Quem paga?:** divida contas, compras e Pix com outras pessoas. O app calcula o que cada uma te deve, mês a mês ou como saldo sem prazo (ex.: um empréstimo ou uma obra). Cada fatura mostra quanto cada pessoa deve nela, com um resumo pronto para mandar.
 - **Reserva, renda e financiamento da casa.**
-- **Bancos conectados (opcional):** importação automática via Open Finance com a [Pluggy](https://pluggy.ai) (Meu Pluggy), com uma fila para você revisar o que chegou.
+- **Bancos conectados (opcional):** importação automática via Open Finance com a [Pluggy](https://pluggy.ai) (Meu Pluggy). O que chega cai na tela **Para revisar**, no menu, onde você confirma categoria e quem paga com um toque.
 
 Funciona no navegador e pode ser instalado como app (PWA) no celular.
 

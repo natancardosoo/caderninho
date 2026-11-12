@@ -896,3 +896,22 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .inv-split.compact .is-line .grow { color: var(--muted); }
 .inv-split.compact .is-line .grow b { color: var(--text); }
 .brand-logo { width: 36px; height: 36px; border-radius: 10px; flex: none; box-shadow: 0 2px 6px rgba(15, 23, 42, .18); }
+
+/* ---------- para revisar ---------- */
+.nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.menu-dot { position: absolute; top: 5px; right: 4px; width: 9px; height: 9px; border-radius: 99px; background: var(--red); border: 2px solid var(--card); }
+.tile.blue { background: var(--blue-soft); color: var(--blue); }
+.rv-tip { font-size: 13px; color: var(--muted); margin: 0 4px 12px; line-height: 1.45; }
+.rv-day { margin-bottom: 12px; }
+.rv-item { border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 10px; }
+.rv-top { display: flex; align-items: center; gap: 10px; }
+.rv-top .grow { min-width: 0; }
+.rv-top .grow b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-top small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+.rv-amt { font-size: 16px; }
+.rv-field { margin-top: 10px; }
+.rv-field > small { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.rv-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-2); }
+.rv-cat { height: 32px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--card); color: var(--text); padding: 0 8px; font: inherit; font-size: 13px; flex: 1; min-width: 0; max-width: 200px; margin-right: auto; }
+.rv-actions .btn { flex: none; }
+.rv-note { display: block; font-size: 12px; color: var(--muted); margin-top: 8px; }

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
   LayoutGrid, ArrowLeftRight, CreditCard, Building2, Vault, Banknote, Home, ChevronLeft, ChevronRight,
-  ChevronDown, Bell, Plus, Sun, Moon, Menu, X, Receipt, ShoppingBag, PiggyBank, TrendingUp, ChevronUp, House, HandCoins, Landmark,
+  ChevronDown, Bell, Plus, Sun, Moon, Menu, X, Receipt, ShoppingBag, PiggyBank, TrendingUp, ChevronUp, House, HandCoins, Landmark, Inbox,
 } from 'lucide-react';
 import { useApp } from './store.jsx';
 import { FORMS } from './forms.jsx';
 import { useOutside, BillIcon, useBackClose } from './ui.jsx';
-import { MONTHS, MONTHS_SHORT, parseMk, mk, addMonths, notifications, brl, currentMk } from './lib.js';
+import { MONTHS, MONTHS_SHORT, parseMk, mk, addMonths, notifications, reviewQueue, brl, currentMk } from './lib.js';
 import Dashboard from './pages/Dashboard.jsx';
 import Fluxo from './pages/Fluxo.jsx';
 import Cartoes from './pages/Cartoes.jsx';
@@ -16,9 +16,11 @@ import Renda from './pages/Renda.jsx';
 import Contas from './pages/Contas.jsx';
 import Receber from './pages/Receber.jsx';
 import Bancos from './pages/Bancos.jsx';
+import Revisar from './pages/Revisar.jsx';
 
 const NAV = [
   { r: '/', label: 'Visão geral', icon: LayoutGrid },
+  { r: '/revisar', label: 'Para revisar', icon: Inbox, count: true },
   { r: '/fluxo', label: 'Fluxo de caixa', icon: ArrowLeftRight },
   { r: '/cartoes', label: 'Cartões', icon: CreditCard },
   { r: '/receber', label: 'A receber', icon: HandCoins },
@@ -30,7 +32,7 @@ const NAV2 = [
   { r: '/contas', label: 'Contas fixas', icon: Home },
   { r: '/bancos', label: 'Bancos conectados', icon: Landmark },
 ];
-const PAGES = { '/': Dashboard, '/fluxo': Fluxo, '/cartoes': Cartoes, '/casa': Casa, '/reserva': Reserva, '/renda': Renda, '/contas': Contas, '/receber': Receber, '/bancos': Bancos };
+const PAGES = { '/': Dashboard, '/fluxo': Fluxo, '/cartoes': Cartoes, '/casa': Casa, '/reserva': Reserva, '/renda': Renda, '/contas': Contas, '/receber': Receber, '/bancos': Bancos, '/revisar': Revisar };
 
 function Brand() {
   return (
@@ -48,10 +50,12 @@ function Sidebar({ open, onClose }) {
   const { route, go, state, update } = useApp();
   useBackClose(open, onClose);
   const [editName, setEditName] = useState(false);
+  const pending = reviewQueue(state).length;
   const item = (n) => (
     <button key={n.r} className={`nav-item ${route === n.r ? 'on' : ''}`} onClick={() => { go(n.r); onClose(); }}>
       <n.icon size={16} strokeWidth={route === n.r ? 2.2 : 1.8} />
       {n.label}
+      {n.count && pending > 0 && <span className="nav-count">{pending}</span>}
     </button>
   );
   return (
@@ -128,16 +132,23 @@ function Notifications() {
   const [open, setOpen] = useState(false);
   const ref = useOutside(open, setOpen);
   const list = notifications(state);
+  const pending = reviewQueue(state).length;
   return (
     <div className="rel" ref={ref}>
       <button className="icon-btn bordered" onClick={() => setOpen(!open)} aria-label="Notificações">
         <Bell size={18} />
-        {list.length > 0 && <span className="badge">{list.length}</span>}
+        {list.length + (pending ? 1 : 0) > 0 && <span className="badge">{list.length + (pending ? 1 : 0)}</span>}
       </button>
       {open && (
         <div className="pop notif-pop">
           <div className="pop-title">Avisos</div>
-          {list.length === 0 && <div className="empty small">Nada vencendo nos próximos dias 🎉</div>}
+          {pending > 0 && (
+            <button className="notif" onClick={() => { go('/revisar'); setOpen(false); }}>
+              <span className="tile blue"><Inbox size={16} /></span>
+              <span className="grow"><b>Para revisar</b><small>{pending} lançamento{pending > 1 ? 's' : ''} dos bancos esperando você</small></span>
+            </button>
+          )}
+          {list.length === 0 && !pending && <div className="empty small">Nada vencendo nos próximos dias 🎉</div>}
           {list.map((n) => (
             <button key={n.M + n.id} className="notif" onClick={() => { setM(n.M); go(n.kind === 'card' ? '/cartoes' : '/'); setOpen(false); }}>
               <span className={`tile ${n.days < 0 ? 'red' : n.days <= 1 ? 'orange' : ''}`}><BillIcon name={n.icon} size={16} /></span>
@@ -233,7 +244,8 @@ function BottomNav() {
 }
 
 export default function App() {
-  const { route, form, setForm, saveStatus } = useApp();
+  const { route, form, setForm, saveStatus, state } = useApp();
+  const pending = reviewQueue(state).length;
   const [menu, setMenu] = useState(false);
   const Page = PAGES[route] || Dashboard;
   const Form = form && FORMS[form.type];
@@ -242,7 +254,7 @@ export default function App() {
       <Sidebar open={menu} onClose={() => setMenu(false)} />
       <main className="main">
         <header className="mobile-head card">
-          <button className="icon-btn ghost" onClick={() => setMenu(true)} aria-label="Abrir menu"><Menu size={22} /></button>
+          <button className="icon-btn ghost" onClick={() => setMenu(true)} aria-label="Abrir menu"><Menu size={22} />{pending > 0 && <span className="menu-dot" />}</button>
           <Brand />
           <Notifications />
         </header>

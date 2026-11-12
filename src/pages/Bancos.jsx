@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, RefreshCw, Trash2, Check, Pencil, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, AlertTriangle, RotateCcw, Inbox } from 'lucide-react';
 import { useApp } from '../store.jsx';
 import { Empty } from '../ui.jsx';
 import { PageHead } from './Fluxo.jsx';
 import { PluggyConnect } from 'pluggy-connect-sdk';
-import { brl, fmtDate, personName } from '../lib.js';
-import { Who } from '../people.jsx';
+import { reviewQueue } from '../lib.js';
 
 const STATUS = {
   UPDATED: ['Atualizado', 'green'], UPDATING: ['Atualizando…', ''], LOGIN_ERROR: ['Precisa reconectar', 'red'],
@@ -21,7 +20,7 @@ async function call(path, method = 'GET', body) {
 }
 
 export default function Bancos() {
-  const { state, update, setForm, refresh } = useApp();
+  const { state, refresh, go } = useApp();
   const [st, setSt] = useState(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
@@ -49,14 +48,7 @@ export default function Bancos() {
   };
   const remove = async (id) => { await call(`/items/${id}`, 'DELETE'); load(); };
 
-  const review = [
-    ...state.purchases.filter((p) => p.review).map((p) => ({ kind: 'purchase', x: p, where: state.cards.find((c) => c.id === p.cardId)?.name || 'Cartão' })),
-    ...state.transactions.filter((t) => t.review).map((t) => ({ kind: 'tx', x: t, where: t.type === 'in' ? 'Entrada na conta' : 'Saída da conta' })),
-  ].sort((a, b) => b.x.date.localeCompare(a.x.date));
-  const key = (k) => (k === 'purchase' ? 'purchases' : 'transactions');
-  const confirm = (it) => update((s) => { const r = s[key(it.kind)].find((y) => y.id === it.x.id); if (r) delete r.review; });
-  const confirmAll = () => update((s) => { for (const k of ['purchases', 'transactions']) for (const r of s[k]) delete r.review; });
-  const discard = (it) => update((s) => { s[key(it.kind)] = s[key(it.kind)].filter((y) => y.id !== it.x.id); });
+  const pending = reviewQueue(state).length;
 
   const res = st?.lastResult;
   return (
@@ -105,27 +97,11 @@ export default function Bancos() {
         </section>
 
         <section className="card">
-          <div className="sec-head">
-            <span>Para revisar</span>
-            <span>{review.length > 0 && <button className="btn small" onClick={confirmAll}><Check size={14} /> Confirmar todos</button>}</span>
-          </div>
-          {review.length === 0 && <Empty>Tudo revisado. O que chegar dos bancos aparece aqui primeiro.</Empty>}
-          <p className="note" style={review.length ? {} : { display: 'none' }}>Toque no lápis para conferir categoria e quem paga. Pix que você fez por alguém: marque a pessoa em <b>Quem paga?</b>. Dinheiro que alguém te devolveu: marque em <b>De quem é esse dinheiro?</b>. Os dois vão para <b>A receber → Em aberto</b> e não contam como gasto ou renda seus.</p>
-          <div className="list">
-            {review.map((it) => (
-              <div key={it.kind + it.x.id} className="list-row">
-                <span className="grow">
-                  <b>{it.x.desc}</b>
-                  <small>{fmtDate(it.x.date)} · {it.where} · {it.x.category}{it.x.installments > 1 ? ` · ${it.x.installments}x` : ''}{it.x.reimbFrom ? ` · devolução de ${personName(state, it.x.reimbFrom)}` : ''}</small>
-                  {it.x.type !== 'in' && <Who item={it.x} />}
-                </span>
-                <b className={`nowrap ${it.kind === 'tx' && it.x.type === 'in' ? 'green' : ''}`}>{brl(it.x.amount)}</b>
-                <button className="icon-btn ghost" title="Editar" onClick={() => setForm({ type: it.kind, data: it.x })}><Pencil size={15} /></button>
-                <button className="icon-btn ghost" title="Confirmar" onClick={() => confirm(it)}><Check size={16} /></button>
-                <button className="icon-btn ghost" title="Excluir (não volta a ser importado)" onClick={() => discard(it)}><Trash2 size={15} /></button>
-              </div>
-            ))}
-          </div>
+          <div className="sec-head"><span>Para revisar</span><span>{pending}</span></div>
+          {pending === 0
+            ? <Empty>Tudo revisado. O que chegar dos bancos aparece primeiro na tela Para revisar.</Empty>
+            : <p className="note">{pending} lançamento{pending > 1 ? 's' : ''} esperando você conferir quem paga e a categoria.</p>}
+          <div className="btn-row"><button className={`btn small ${pending ? 'primary' : ''}`} onClick={() => go('/revisar')}><Inbox size={15} /> Abrir Para revisar</button></div>
         </section>
       </div>
     </div>

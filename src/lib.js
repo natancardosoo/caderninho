@@ -371,6 +371,15 @@ export function reserveEntries(state) {
 }
 export const reserveTotal = (state) => round2(reserveEntries(state).reduce((s, e) => s + e.amount, 0));
 
+// fila do que chegou dos bancos e ainda não foi revisado (mais recentes primeiro)
+export function reviewQueue(state) {
+  const bankOf = (b) => (b ? (BANKS[b]?.label === 'nu' ? 'Nubank' : BANKS[b]?.label || b) : '');
+  return [
+    ...state.purchases.filter((p) => p.review).map((p) => ({ kind: 'purchase', x: p, where: state.cards.find((c) => c.id === p.cardId)?.name || 'Cartão' })),
+    ...state.transactions.filter((t) => t.review).map((t) => ({ kind: 'tx', x: t, where: `${t.type === 'in' ? 'Entrou na conta' : 'Saiu da conta'}${t.bank ? ` · ${bankOf(t.bank)}` : ''}` })),
+  ].sort((a, b) => b.x.date.localeCompare(a.x.date) || a.x.desc.localeCompare(b.x.desc));
+}
+
 export function notifications(state) {
   const cur = currentMk();
   const out = [];
