@@ -91,6 +91,21 @@ export function applyShares(item, shares) {
 export const peopleIn = (x) => sharesOf(x).map((s) => s.id).filter((id) => id !== 'me');
 export const personOf = (state, id) => (state.people || []).find((p) => p.id === id);
 export const personName = (state, id) => personOf(state, id)?.name || 'Alguém';
+// nome que aparece no banco (Pix) → pessoa. "Edsonia" casa com "Edsonia Oliveira Souza";
+// sem acento/maiúscula. Se mais de uma casar, vence o nome cadastrado mais completo.
+const normName = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter(Boolean);
+export function personByPixName(state, sender) {
+  const words = new Set(normName(sender));
+  if (!words.size) return undefined;
+  let best, bestLen = 0;
+  for (const p of state.people || [])
+    for (const n of p.pixNames || []) {
+      const t = normName(n);
+      if (t.length && t.every((w) => words.has(w)) && t.length > bestLen) { best = p; bestLen = t.length; }
+    }
+  return best;
+}
+export const pixSender = (desc) => (desc || '').match(/^Pix — (.+)$/)?.[1] || '';
 export const othersPart = (i) => round2(i.part * (1 - myShare(i)));
 export const isLater = (x) => x.settle === 'later' && !x.recurring;
 export const monthlyOthersPart = (i) => (isLater(i) ? 0 : othersPart(i));

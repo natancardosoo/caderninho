@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Modal, Field, MoneyInput, Segmented, BillIcon, BILL_ICONS, Check3 } from './ui.jsx';
-import { sharesOf, applyShares, TX_GROUP, uid, parseMoney, todayStr, CATEGORIES, BANKS, currentMk, brl, purchaseDueMonth, monthName, parseMk } from './lib.js';
+import { sharesOf, applyShares, TX_GROUP, uid, parseMoney, todayStr, CATEGORIES, BANKS, currentMk, brl, purchaseDueMonth, monthName, parseMk, purchaseTotal } from './lib.js';
 import { useApp } from './store.jsx';
-import { SplitEditor, SettleField, PersonPicker } from './people.jsx';
+import { SplitEditor, SettleField, PersonPicker, GroupPicker } from './people.jsx';
 
 function Foot({ onDelete, onCancel, saveLabel = 'Salvar', disabled }) {
   return (
@@ -29,7 +29,6 @@ export function TxForm({ data, onClose }) {
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v?.target ? v.target.value : v }));
   const amount = parseMoney(f.amount);
   const others = f.type === 'out' ? shares.some((x) => x.id !== 'me') : from !== 'me';
-  const groups = [...new Set([TX_GROUP, ...(state.ledger || []).map((e) => e.group), ...state.purchases.map((p) => p.debtGroup), ...state.transactions.map((t) => t.debtGroup)].filter(Boolean))];
   const submit = (e) => {
     e.preventDefault();
     if (!amount || !f.desc.trim()) return;
@@ -79,8 +78,7 @@ export function TxForm({ data, onClose }) {
         )}
         {others && (
           <Field label="Grupo no saldo devedor">
-            <input list="tx-groups" value={f.group} onChange={set('group')} placeholder={TX_GROUP} />
-            <datalist id="tx-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
+            <GroupPicker value={f.group} onChange={set('group')} noneLabel={TX_GROUP} />
           </Field>
         )}
         {others && <p className="note">Vai para <b>A receber → Em aberto</b>{f.type === 'in' && fromName ? ` como pagamento de ${fromName}` : ''}.</p>}
@@ -148,7 +146,9 @@ export function PurchaseForm({ data, onClose }) {
         </div>
         <label className="toggle-line"><Check3 checked={f.recurring} onChange={set('recurring')} /> Assinatura (cobra todo mês)</label>
         <Field group label="Quem paga?" hint="Toque para incluir ou tirar pessoas. Compra em conjunto: marque todo mundo que divide.">
-          <SplitEditor total={f.recurring ? amount : edit?.installmentValue && amount === edit.amount ? edit.installmentValue : amount / n} value={shares} onChange={setShares} />
+          <SplitEditor total={f.recurring ? amount : edit?.installmentValue && amount === edit.amount ? edit.installmentValue : amount / n}
+            full={f.recurring || n < 2 ? undefined : edit?.installmentValue && amount === edit.amount && n === (edit.installments || 1) ? purchaseTotal(edit) : amount}
+            value={shares} onChange={setShares} />
         </Field>
         {!f.recurring && shares.some((s) => s.id !== 'me') && <SettleField settle={settle.settle} group={settle.group} onChange={setSettle} />}
         {!f.recurring && (
@@ -361,7 +361,6 @@ export function LedgerForm({ data, onClose }) {
     amount: edit ? Math.abs(edit.amount) : '', desc: edit?.desc || '', date: edit?.date || todayStr(), group: edit?.group ?? data?.group ?? '',
   });
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v?.target ? v.target.value : v }));
-  const groups = [...new Set([...(state.ledger || []).map((e) => e.group), ...state.purchases.map((p) => p.debtGroup)].filter(Boolean))];
   const submit = (e) => {
     e.preventDefault();
     const a = parseMoney(f.amount);
@@ -382,10 +381,8 @@ export function LedgerForm({ data, onClose }) {
         <Field group label="Pessoa"><PersonPicker value={f.personId} onChange={set('personId')} /></Field>
         <Field label="Valor"><MoneyInput value={edit ? Math.abs(edit.amount) : undefined} onChange={set('amount')} autoFocus /></Field>
         <Field label="Descrição"><input value={f.desc} onChange={set('desc')} placeholder={f.kind === 'pay' ? 'Ex.: Pix parcial da obra' : 'Ex.: material, empréstimo'} /></Field>
-        <div className="row2">
-          <Field label="Data"><input type="date" value={f.date} onChange={set('date')} /></Field>
-          <Field label="Grupo"><input list="ledger-groups" value={f.group} onChange={set('group')} placeholder="Ex.: Obra" /><datalist id="ledger-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist></Field>
-        </div>
+        <Field label="Data"><input type="date" value={f.date} onChange={set('date')} /></Field>
+        <Field group label="Grupo"><GroupPicker value={f.group} onChange={set('group')} /></Field>
         {f.kind === 'pay' && <p className="note">O pagamento abate do saldo sem prazo da pessoa. Valores do mês a mês você marca direto na lista.</p>}
       </form>
     </Modal>

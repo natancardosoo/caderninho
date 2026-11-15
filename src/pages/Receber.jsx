@@ -7,7 +7,7 @@ import { ChevronDown, Plus, HandCoins } from 'lucide-react';
 import { Modal } from '../ui.jsx';
 import { PageHead } from './Fluxo.jsx';
 import {
-  receivablesByPerson, invoiceItems, billsForMonth, brl, monthName, monthShort, parseMk, fmtDate, PEOPLE_COLORS, sharesOf, applyShares, peopleIn, debtsByPerson, round2,
+  receivablesByPerson, invoiceItems, billsForMonth, brl, monthName, monthShort, parseMk, fmtDate, PEOPLE_COLORS, sharesOf, applyShares, peopleIn, debtsByPerson, round2, personByPixName, pixSender, purchaseTotal,
 } from '../lib.js';
 
 // ---------- aba Classificar: passar item por item ----------
@@ -19,7 +19,7 @@ function Classificar() {
     const out = [];
     for (const c of state.cards)
       for (const i of invoiceItems(state, c, M))
-        out.push({ kind: 'purchase', id: i.id, desc: i.desc, amount: i.part, payer: i.payer || 'me', split: i.split, settle: i.settle, debtGroup: i.debtGroup, recurring: !!i.recurring, reviewed: !!i.reviewed,
+        out.push({ kind: 'purchase', id: i.id, desc: i.desc, amount: i.part, full: !i.recurring && (i.installments || 1) > 1 ? purchaseTotal(i) : undefined, payer: i.payer || 'me', split: i.split, settle: i.settle, debtGroup: i.debtGroup, recurring: !!i.recurring, reviewed: !!i.reviewed,
           meta: [i.inst && i.inst !== 'mensal' ? null : fmtDate(i.date), i.inst === 'mensal' ? 'assinatura' : i.inst ? `parcela ${i.inst}` : 'à vista', i.category, state.cards.length > 1 ? c.name : null].filter(Boolean).join(' · ') });
     for (const b of billsForMonth(state, M))
       out.push({ kind: 'bill', id: b.id, desc: b.name, amount: b.amount, payer: b.payer || 'me', split: b.split, mode: b.otherMode, reviewed: !!b.reviewed, icon: b.icon,
@@ -80,7 +80,7 @@ function Classificar() {
           footer={<><span style={{ flex: 1 }} /><button className="btn" onClick={() => setSplitting(null)}>Cancelar</button><button className="btn primary" onClick={() => { setShares(splitting, draft); if (splitting.kind === 'purchase' && !splitting.recurring) update((s) => { const p = find(s, splitting); if (p.payer !== 'me' && settleDraft.settle === 'later') { p.settle = 'later'; p.debtGroup = (settleDraft.group || '').trim() || undefined; } else { delete p.settle; delete p.debtGroup; } }); setSplitting(null); }}>Salvar</button></>}>
           <div className="form">
             <small className="muted">{splitting.meta} · {brl(splitting.amount)}</small>
-            <SplitEditor total={splitting.amount} value={sharesOf(splitting)} onChange={setDraft} />
+            <SplitEditor total={splitting.amount} full={splitting.full} value={sharesOf(splitting)} onChange={setDraft} />
             {splitting.kind === 'purchase' && !splitting.recurring && (draft || []).some((s) => s.id !== 'me') && <SettleField settle={settleDraft.settle} group={settleDraft.group} onChange={setSettleDraft} />}
           </div>
         </Modal>
@@ -146,6 +146,40 @@ function QuemDeve() {
   );
 }
 
+// nomes com que a pessoa aparece no banco: Pix recebido desse nome já chega como devolução dela
+function PixNames({ person }) {
+  const { state, update } = useApp();
+  const [v, setV] = useState('');
+  const names = person.pixNames || [];
+  const add = (e) => {
+    e.preventDefault();
+    const n = v.trim();
+    if (!n) return;
+    update((s) => {
+      const p = s.people.find((x) => x.id === person.id);
+      if (!(p.pixNames || []).some((x) => x.toLowerCase() === n.toLowerCase())) p.pixNames = [...(p.pixNames || []), n];
+      // o que ainda está em "Para revisar" e casa com o nome já ganha a marcação
+      for (const t of s.transactions || []) if (t.review && t.type === 'in' && !t.reimbFrom && personByPixName(s, pixSender(t.desc))?.id === person.id) t.reimbFrom = person.id;
+    });
+    setV('');
+  };
+  const del = (n) => update((s) => { const p = s.people.find((x) => x.id === person.id); p.pixNames = (p.pixNames || []).filter((x) => x !== n); });
+  return (
+    <div className="pix-names">
+      <small>No banco aparece como</small>
+      <div className="pchips">
+        {names.map((n) => (
+          <span key={n} className="pix-name">{n}<button type="button" onClick={() => del(n)} aria-label={`Remover ${n}`}>×</button></span>
+        ))}
+        <form onSubmit={add} className="pix-add">
+          <input value={v} onChange={(e) => setV(e.target.value)} placeholder={names.length ? '+ outro nome' : '+ nome que aparece no Pix'} />
+          {v.trim() && <button className="btn small primary" type="submit">Adicionar</button>}
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ---------- aba Pessoas ----------
 function Pessoas() {
   const { state, update } = useApp();
@@ -169,7 +203,8 @@ function Pessoas() {
       {(state.people || []).length === 0 && <Empty>Nenhuma pessoa cadastrada.</Empty>}
       <div className="list">
         {(state.people || []).map((p) => (
-          <div key={p.id} className="list-row person-row">
+          <div key={p.id} className="person-block">
+          <div className="list-row person-row">
             <Avatar person={p} size={32} />
             <span className="grow">
               <input className="inline-input" defaultValue={p.name} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.name) update((s) => { s.people.find((x) => x.id === p.id).name = v; }); }} />
@@ -181,6 +216,8 @@ function Pessoas() {
               ))}
             </span>
             <button className="icon-btn ghost" onClick={() => remove(p)} aria-label="Excluir"><Trash2 size={16} /></button>
+          </div>
+          <PixNames person={p} />
           </div>
         ))}
       </div>
@@ -275,7 +312,7 @@ function EmAberto() {
                 );
               })}
               <div className="btn-row">
-                <button className="btn small primary" onClick={() => openForm('ledger', { kind: 'pay', personId: g.person.id, group: Object.keys(byGroup)[0] === 'Outros' ? '' : Object.keys(byGroup)[0] || '' })}><HandCoins size={15} /> Me pagou</button>
+                <button className="btn small primary" onClick={() => openForm('ledger', { kind: 'pay', personId: g.person.id, group: (() => { const top = Object.entries(byGroup).map(([n, l]) => [n, l.reduce((a, e) => a + e.amount, 0)]).sort((a, b) => b[1] - a[1])[0]; return !top || top[0] === 'Outros' || top[1] <= 0 ? '' : top[0]; })() })}><HandCoins size={15} /> Me pagou</button>
                 <button className="btn small" onClick={() => openForm('ledger', { kind: 'debt', personId: g.person.id })}><Plus size={15} /> Lançar</button>
                 <button className="btn small" onClick={() => share(g)}>{copied === g.person.id ? <><Check size={15} /> Copiado</> : <><Send size={15} /> Resumo</>}</button>
               </div>
@@ -297,7 +334,7 @@ export default function Receber() {
   const owed = debts.reduce((s, g) => s + g.total, 0);
   return (
     <div className="page">
-      <PageHead title="Quem me deve" icon="money_with_wings" value={owed}
+      <PageHead title="A receber" icon="money_with_wings" value={owed}
         sub={`${debts.length} pessoa${debts.length !== 1 ? 's' : ''} com valor em aberto · em ${monthName(M).toLowerCase()} entram ${brl(pending)} (${brl(total - pending)} de ${brl(total)} já recebido)`}>
         <Segmented value={tab} onChange={setTab} className="tabs" options={[{ value: 'geral', label: 'Em aberto' }, { value: 'deve', label: 'Este mês' }, { value: 'class', label: 'Classificar' }, { value: 'pessoas', label: 'Pessoas' }]} />
       </PageHead>

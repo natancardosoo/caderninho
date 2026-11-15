@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Check } from 'lucide-react';
 import { useApp } from './store.jsx';
-import { uid, PEOPLE_COLORS, personOf, sharesOf, brl, num, parseMoney, round2 } from './lib.js';
+import { uid, PEOPLE_COLORS, personOf, sharesOf, brl, num, parseMoney, round2, TX_GROUP } from './lib.js';
 import { Segmented } from './ui.jsx';
 
 export function Avatar({ person, size = 20 }) {
@@ -84,15 +84,21 @@ export function Who({ item, payer, mode }) {
   );
 }
 
-// "Quem paga?" com várias pessoas: tocar inclui/remove; divide igual ou por valor
-export function SplitEditor({ total = 0, value, onChange }) {
+// "Quem paga?" com várias pessoas: tocar inclui/remove; divide igual ou por valor.
+// total = valor de um mês/parcela; full = valor da compra inteira (só em compras parceladas):
+// aí os valores podem ser digitados sobre a compra toda e o app acha a proporção sozinho.
+export function SplitEditor({ total = 0, full, value, onChange }) {
   const { state } = useApp();
   const add = useAddPerson();
   const init = value?.length ? value : [{ id: 'me', share: 1 }];
   const [sel, setSel] = useState(init.map((s) => s.id));
   const equalInit = init.every((s) => Math.abs(s.share - init[0].share) < 0.001);
   const [mode, setMode] = useState(equalInit ? 'equal' : 'custom');
-  const [amounts, setAmounts] = useState(() => Object.fromEntries(init.map((s) => [s.id, num(s.share * total)])));
+  const parcelado = full > 0 && Math.abs(full - total) > 0.009;
+  const [onFull, setOnFull] = useState(true);
+  const useFull = parcelado && onFull;
+  const base = useFull ? full : total; // sobre qual valor os campos são digitados
+  const [amounts, setAmounts] = useState(() => Object.fromEntries(init.map((s) => [s.id, num(s.share * (parcelado ? full : total))])));
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const me = state.profile.name || 'Eu';
@@ -103,7 +109,7 @@ export function SplitEditor({ total = 0, value, onChange }) {
     if (sel2.length === 1 || mode2 === 'equal') return sel2.map((id) => ({ id, share: 1 / sel2.length }));
     const others = sel2.filter((id) => id !== 'me');
     const vals = Object.fromEntries(others.map((id) => [id, parseMoney(am[id] || 0)]));
-    if (sel2.includes('me')) vals.me = Math.max(total - others.reduce((a, id) => a + vals[id], 0), 0);
+    if (sel2.includes('me')) vals.me = Math.max(base - others.reduce((a, id) => a + vals[id], 0), 0);
     const sum = Object.values(vals).reduce((a, b) => a + b, 0) || 1;
     return sel2.map((id) => ({ id, share: vals[id] / sum }));
   };
@@ -122,7 +128,13 @@ export function SplitEditor({ total = 0, value, onChange }) {
   const shares = compute(sel, mode, amounts);
   const shareOf = (id) => shares.find((s) => s.id === id)?.share || 0;
   const othersSum = sel.filter((id) => id !== 'me').reduce((a, id) => a + parseMoney(amounts[id] || 0), 0);
-  const diff = round2(total - othersSum);
+  const diff = round2(base - othersSum);
+  const switchBase = (f) => {
+    if (f === useFull) return;
+    const to = f ? full : total;
+    const am = Object.fromEntries(sel.map((id) => [id, num(shareOf(id) * to)]));
+    setOnFull(f); setAmounts(am);
+  };
 
   return (
     <div className="split-ed">
@@ -145,9 +157,13 @@ export function SplitEditor({ total = 0, value, onChange }) {
       {sel.length > 1 && (
         <div className="split-box">
           <Segmented value={mode} onChange={(m) => {
-            const am = m === 'custom' ? Object.fromEntries(sel.map((id) => [id, num(shareOf(id) * total)])) : amounts;
+            const am = m === 'custom' ? Object.fromEntries(sel.map((id) => [id, num(shareOf(id) * base)])) : amounts;
             setMode(m); setAmounts(am); emit(sel, m, am);
           }} options={[{ value: 'equal', label: 'Dividir igual' }, { value: 'custom', label: 'Valor de cada um' }]} />
+          {parcelado && mode === 'custom' && (
+            <Segmented value={useFull ? 'full' : 'part'} onChange={(v) => switchBase(v === 'full')}
+              options={[{ value: 'full', label: `Da compra toda (${brl(full)})` }, { value: 'part', label: `Por parcela (${brl(total)})` }]} />
+          )}
           {sel.map((id) => {
             const p = people.find((x) => x.id === id);
             const auto = mode === 'equal' || id === 'me';
@@ -155,7 +171,8 @@ export function SplitEditor({ total = 0, value, onChange }) {
               <div key={id} className="split-row">
                 {id === 'me' ? <span className="av" style={{ background: 'var(--blue)', width: 22, height: 22, fontSize: 10.5, borderWidth: 0 }}>{p.initial}</span> : <Avatar person={p} size={22} />}
                 <span className="grow">{id === 'me' ? 'Você' : p?.name}</span>
-                {auto ? <b>{brl(shareOf(id) * total)}</b> : (
+                {parcelado && <small className="split-sub">{useFull || auto ? `${brl(shareOf(id) * total)}/parcela` : `${brl(shareOf(id) * full)} no total`}</small>}
+                {auto ? <b>{brl(shareOf(id) * base)}</b> : (
                   <span className="money-input sm"><span>R$</span>
                     <input inputMode="decimal" value={amounts[id] ?? ''} onChange={(e) => { const am = { ...amounts, [id]: e.target.value }; setAmounts(am); emit(sel, mode, am); }} />
                   </span>
@@ -163,19 +180,49 @@ export function SplitEditor({ total = 0, value, onChange }) {
               </div>
             );
           })}
-          {mode === 'custom' && !sel.includes('me') && Math.abs(diff) > 0.009 && <small className="split-hint orange">{diff > 0 ? `Faltam ${brl(diff)} para fechar ${brl(total)}` : `Passou ${brl(-diff)} do total`} — os valores serão ajustados proporcionalmente.</small>}
+          {mode === 'custom' && !sel.includes('me') && Math.abs(diff) > 0.009 && <small className="split-hint orange">{diff > 0 ? `Faltam ${brl(diff)} para fechar ${brl(base)}` : `Passou ${brl(-diff)} do total`} — os valores serão ajustados proporcionalmente.</small>}
           {mode === 'custom' && sel.includes('me') && <small className="split-hint">Sua parte é o que sobra.</small>}
-          {total > 0 && <small className="split-hint">Divisão sobre {brl(total)}. Nos outros meses/parcelas vale a mesma proporção.</small>}
+          {total > 0 && <small className="split-hint">{parcelado
+            ? `Divisão sobre ${useFull ? `a compra toda (${brl(full)})` : `a parcela (${brl(total)})`}. Todas as parcelas seguem a mesma proporção.`
+            : `Divisão sobre ${brl(total)}. Nos outros meses vale a mesma proporção.`}</small>}
         </div>
       )}
     </div>
   );
 }
 
+// grupos do saldo devedor (Obra, Empréstimo...): escolhe com um toque ou cria um novo
+export function useDebtGroups() {
+  const { state } = useApp();
+  const txs = state.transactions || [];
+  const hasTx = txs.some((t) => !t.debtGroup && (t.reimbFrom || (t.type === 'out' && sharesOf(t).some((sh) => sh.id !== 'me'))));
+  return [...new Set([...(state.ledger || []).map((e) => e.group), ...state.purchases.map((p) => p.debtGroup), ...txs.map((t) => t.debtGroup), hasTx && TX_GROUP].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+export function GroupPicker({ value = '', onChange, noneLabel = 'Sem grupo' }) {
+  const groups = useDebtGroups().filter((g) => g !== noneLabel);
+  const [adding, setAdding] = useState(false);
+  const custom = value && !groups.includes(value);
+  const chip = (label, v, on) => (
+    <button type="button" key={label} className={`pchip ${on ? 'on' : ''}`} style={{ '--pc': 'var(--blue)' }} onClick={() => { setAdding(false); onChange(v); }}>
+      {on && <Check size={13} />}{label}
+    </button>
+  );
+  return (
+    <div className="group-picker">
+      <div className="pchips">
+        {chip(noneLabel, '', !value && !adding)}
+        {groups.map((g) => chip(g, g, value === g && !adding))}
+        <button type="button" className={`pchip ${adding || custom ? 'on' : ''}`} style={{ '--pc': 'var(--blue)' }} onClick={() => { setAdding(true); if (!custom) onChange(''); }}>
+          <Plus size={13} />{custom && !adding ? value : 'Novo grupo'}
+        </button>
+      </div>
+      {(adding || custom) && <input className="name-input" autoFocus={adding} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Nome do grupo (ex.: Obra, Empréstimo)" />}
+    </div>
+  );
+}
+
 // quando a(s) pessoa(s) devolvem: junto com a fatura (todo mês) ou depois, sem prazo (vai pro saldo devedor)
 export function SettleField({ settle, group, onChange }) {
-  const { state } = useApp();
-  const groups = [...new Set([...(state.ledger || []).map((e) => e.group), ...state.purchases.map((p) => p.debtGroup)].filter(Boolean))];
   return (
     <div className="settle">
       <Segmented value={settle === 'later' ? 'later' : 'monthly'} onChange={(v) => onChange({ settle: v === 'later' ? 'later' : undefined, group })}
@@ -183,8 +230,7 @@ export function SettleField({ settle, group, onChange }) {
       {settle === 'later' && (
         <label className="field">
           <span className="field-hint">O valor total (todas as parcelas) entra no saldo devedor da pessoa. No seu caixa, a fatura continua sendo sua.</span>
-          <input list="debt-groups" value={group || ''} placeholder="Grupo (ex.: Obra)" onChange={(e) => onChange({ settle: 'later', group: e.target.value })} />
-          <datalist id="debt-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
+          <GroupPicker value={group || ''} onChange={(g) => onChange({ settle: 'later', group: g })} />
         </label>
       )}
     </div>

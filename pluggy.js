@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { PluggyClient } from 'pluggy-sdk';
-import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES } from './src/lib.js';
+import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES, personByPixName } from './src/lib.js';
 
 const SYNC_HOUR = Number(process.env.PLUGGY_SYNC_HOUR || 18);
 const FIRST_SYNC_DAYS = 120; // primeira sincronização: busca ~4 meses (pega parcelas de compras antigas)
@@ -303,7 +303,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
           const dup = s.transactions.find((t) => (!t.pluggyId || t.pluggyPending) && t.type === type && daysApart(t.date, date) <= 1 && Math.abs(t.amount - value) < 0.01);
           if (dup) { if (!dup.pluggyId) add('linked'); dup.pluggyId = tx.id; dup.pluggyPending = pending || undefined; mark(tx.id, 'lancamento'); continue; }
           // Pix recebido de alguém que já te devolveu dinheiro antes (nome lembrado no app): já vem marcado como devolução
-          const reimbFrom = !out && otherName ? (s.people || []).find((p) => (p.pixNames || []).includes(otherName))?.id : undefined;
+          const reimbFrom = !out && otherName ? personByPixName(s, otherName)?.id : undefined;
           s.transactions.push({ id: uid(), date, desc, amount: value, type, category: out ? toCategory(tx, desc) : 'Outros', src: 'pluggy', pluggyId: tx.id, pluggyPending: pending || undefined, bank, reimbFrom, review: true });
           mark(tx.id, 'lancamento'); add('transactions');
         }
