@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "node ../mini-servidor-mx9/ferramentas/deploy.mjs",
+    "deploy:reverter": "node ../mini-servidor-mx9/ferramentas/deploy.mjs --reverter"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",

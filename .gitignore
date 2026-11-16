@@ -10,3 +10,6 @@ data/
 arquivos_bancos/
 .playwright-mcp/
 *.log
+
+# atalho antigo de iniciar no PC (desativado)
+*.lnk.desativado
