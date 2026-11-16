@@ -4,7 +4,7 @@ import { useApp } from '../store.jsx';
 import { Empty } from '../ui.jsx';
 import { PageHead } from './Fluxo.jsx';
 import { PersonPicker } from '../people.jsx';
-import { reviewQueue, applyShares, sharesOf, personName, brl, fmtDate, todayStr, CATEGORIES } from '../lib.js';
+import { reviewQueue, applyShares, sharesOf, personName, brl, fmtDate, todayStr, monthName, CATEGORIES } from '../lib.js';
 
 const WEEK = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 function dayLabel(date) {
@@ -25,6 +25,8 @@ export default function Revisar() {
 
   const confirm = (it) => edit(it, (r) => { delete r.review; });
   const confirmAll = () => update((s) => { for (const k of ['purchases', 'transactions']) for (const r of s[k]) delete r.review; });
+  // depois de importar o histórico a fila pode ter vários meses: confirma um mês inteiro de uma vez
+  const confirmMonth = (M) => update((s) => { for (const k of ['purchases', 'transactions']) for (const r of s[k]) if (r.review && (r.date || '').startsWith(M)) delete r.review; });
   const discard = (it) => update((s) => { s[coll(it)] = s[coll(it)].filter((y) => y.id !== it.x.id); });
   const setCategory = (it, category) => edit(it, (r) => { r.category = category; });
   // "Quem paga?" com um toque (compra no cartão ou Pix/débito que saiu)
@@ -46,6 +48,9 @@ export default function Revisar() {
     const g = groups[groups.length - 1];
     if (g && g.date === it.x.date) g.items.push(it); else groups.push({ date: it.x.date, items: [it] });
   }
+  const byMonth = {};
+  for (const it of list) { const M = it.x.date.slice(0, 7); byMonth[M] = (byMonth[M] || 0) + 1; }
+  const manyMonths = Object.keys(byMonth).length > 1;
   const total = (t) => list.filter((it) => (t === 'in' ? it.x.type === 'in' : it.x.type !== 'in')).reduce((a, it) => a + it.x.amount, 0);
 
   return (
@@ -62,8 +67,16 @@ export default function Revisar() {
         <p className="rv-tip">Confira <b>quem paga</b> e a <b>categoria</b>. Pix que você fez por alguém sai dos seus gastos e entra no que a pessoa te deve; dinheiro que alguém te devolveu não conta como renda.</p>
       )}
 
-      {groups.map((g) => (
-        <section key={g.date} className="card rv-day">
+      {groups.map((g, gi) => (
+        <React.Fragment key={g.date}>
+        {manyMonths && g.date.slice(0, 7) !== groups[gi - 1]?.date.slice(0, 7) && (
+          <div className="rv-month">
+            <b>{monthName(g.date.slice(0, 7))} {g.date.slice(0, 4)}</b>
+            <span className="muted">{byMonth[g.date.slice(0, 7)]} ite{byMonth[g.date.slice(0, 7)] > 1 ? 'ns' : 'm'}</span>
+            <button className="btn small" onClick={() => confirmMonth(g.date.slice(0, 7))}><CheckCheck size={15} /> Confirmar todos de {monthName(g.date.slice(0, 7)).toLowerCase()}</button>
+          </div>
+        )}
+        <section className="card rv-day">
           <div className="sec-head"><span>{dayLabel(g.date)}</span><span>{g.items.length} ite{g.items.length > 1 ? 'ns' : 'm'}</span></div>
           {g.items.map((it) => {
             const x = it.x;
@@ -100,6 +113,7 @@ export default function Revisar() {
             );
           })}
         </section>
+        </React.Fragment>
       ))}
     </div>
   );

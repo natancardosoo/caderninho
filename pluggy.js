@@ -6,10 +6,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { PluggyClient } from 'pluggy-sdk';
-import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES, personByPixName } from './src/lib.js';
+import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES, personByPixName, emptyState } from './src/lib.js';
 
 const SYNC_HOUR = Number(process.env.PLUGGY_SYNC_HOUR || 18);
-const FIRST_SYNC_DAYS = 120; // primeira sincronização: busca ~4 meses (pega parcelas de compras antigas)
+const FIRST_SYNC_DAYS = 365; // primeira sincronização: busca o que a Pluggy guarda (até 12 meses) — pega parcelas de compras antigas
+const MAX_HISTORY_MONTHS = 12; // a Pluggy guarda até 12 meses de transações
 const OVERLAP_DAYS = 20; // sincronizações seguintes: reprocessa os últimos dias (bancos às vezes lançam com atraso)
 
 // ---------- utilidades ----------
@@ -108,7 +109,8 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
   };
 
   // ---------- busca na Pluggy ----------
-  async function fetchAll(db) {
+  // from (AAAA-MM-DD): busca pelo menos desde essa data (importação de histórico)
+  async function fetchAll(db, from) {
     const c = api();
     const out = [];
     for (const it of db.items) {
@@ -119,7 +121,8 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
           name: item.connector?.name || it.name, connectorId: item.connector?.id, imageUrl: item.connector?.imageUrl,
           status: item.status, executionStatus: item.executionStatus, lastUpdatedAt: item.lastUpdatedAt,
         });
-        const since = db.lastSync ? addDays(db.lastSync.slice(0, 10), -OVERLAP_DAYS) : addDays(todayYmd(), -FIRST_SYNC_DAYS);
+        let since = db.lastSync ? addDays(db.lastSync.slice(0, 10), -OVERLAP_DAYS) : addDays(todayYmd(), -FIRST_SYNC_DAYS);
+        if (from && from < since) since = from;
         const accounts = (await c.fetchAccounts(it.id)).results || [];
         it.institution = institutionName(accounts) || it.institution;
         for (const acc of accounts) {
@@ -313,15 +316,18 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
 
   // ---------- sincronização ----------
   let running = null;
-  async function sync(reason = 'manual') {
+  async function sync(reason = 'manual', from) {
     if (running) return running;
     running = (async () => {
       const db = load();
       const startedAt = new Date().toISOString();
       if (!configured()) return { ok: false, error: 'Credenciais da Pluggy não configuradas' };
       if (!db.items.length) return { ok: false, error: 'Nenhum banco conectado' };
+      // não mistura dados reais com os de exemplo: a primeira importação troca os exemplos por um app vazio
+      const cur = readState();
+      if (!cur || cur.sample) return { ok: false, error: 'O app ainda está com dados de exemplo. Use "Começar com meus dados" para apagá-los e importar seu histórico.' };
       try {
-        const data = await fetchAll(db);
+        const data = await fetchAll(db, from);
         const report = { purchases: 0, transactions: 0, linked: 0, billsPaid: 0, skipped: 0, cardsCreated: 0 };
         const errors = data.filter((e) => e.error).map((e) => `${e.item.name || e.item.id}: ${e.error}`);
         mutateState((s) => apply(s, data.filter((e) => !e.error), db, report));
@@ -338,6 +344,39 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
       }
     })();
     try { return await running; } finally { running = null; }
+  }
+
+  // ---------- importação de histórico ----------
+  // months = quantos meses antes do atual trazer (0 = só o mês atual). Recua o início do acompanhamento
+  // (trackingStart) e roda uma sincronização que busca desde o 1º dia desse mês.
+  // Se o app estiver com dados de exemplo (ou vazio), troca tudo por um app limpo antes.
+  async function importHistory(months) {
+    if (running) return { ok: false, error: 'Já tem uma sincronização em andamento. Tente de novo em instantes.' };
+    if (!configured()) return { ok: false, error: 'Credenciais da Pluggy não configuradas' };
+    const db = load();
+    if (!db.items.length) return { ok: false, error: 'Conecte pelo menos um banco antes de importar.' };
+    const n = Math.min(MAX_HISTORY_MONTHS, Math.max(0, Math.floor(Number(months) || 0)));
+    const startM = addMonthsKey(todayYmd().slice(0, 7), -n);
+    let reset = false;
+    mutateState((s) => {
+      if (!s || s.sample) {
+        reset = true;
+        return { ...emptyState(), theme: s?.theme || 'light', trackingStart: startM };
+      }
+      // só recua: trazer menos meses não apaga o que já foi importado
+      const curStart = s.trackingStart || todayYmd().slice(0, 7);
+      s.trackingStart = startM < curStart ? startM : curStart;
+    });
+    if (reset) {
+      // o controle do que já foi importado se referia aos dados antigos: começa do zero
+      db.known = {}; delete db.lastSync; delete db.lastResult;
+    } else {
+      // compras de cartão antes do início eram marcadas como "antigo" e puladas para sempre: libera para reprocessar
+      for (const [id, why] of Object.entries(db.known)) if (why === 'antigo') delete db.known[id];
+    }
+    save(db);
+    const result = await sync('histórico', `${startM}-01`);
+    return { ...result, reset, trackingStart: startM };
   }
 
   // ---------- agendamento diário ----------
@@ -370,7 +409,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
     try {
       if (p === '/status' && req.method === 'GET') {
         const db = load();
-        return json(res, 200, { configured: configured(), syncHour: SYNC_HOUR, items: db.items, lastSync: db.lastSync || null, lastResult: db.lastResult || null, nextRun: nextAt, running: !!running });
+        return json(res, 200, { configured: configured(), syncHour: SYNC_HOUR, items: db.items, lastSync: db.lastSync || null, lastResult: db.lastResult || null, nextRun: nextAt, running: !!running, maxHistoryMonths: MAX_HISTORY_MONTHS });
       }
       if (p === '/connect-token' && req.method === 'POST') {
         const { itemId } = await body(req);
@@ -398,6 +437,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
         return json(res, 200, { ok: true });
       }
       if (p === '/sync' && req.method === 'POST') return json(res, 200, await sync('manual'));
+      if (p === '/history' && req.method === 'POST') { const { months } = await body(req); return json(res, 200, await importHistory(months)); }
       return json(res, 404, { error: 'not found' });
     } catch (e) {
       log(`[pluggy] ${p}: ${e?.message || e}`);

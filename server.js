@@ -26,12 +26,13 @@ const writeState = (next, cur) => {
   fs.renameSync(STATE + '.tmp', STATE);
   return next._rev;
 };
-// alteração feita pelo servidor (sincronização com o banco): lê, aplica e grava de uma vez (síncrono)
+// alteração feita pelo servidor (sincronização com o banco): lê, aplica e grava de uma vez (síncrono).
+// fn pode devolver um estado novo inteiro (ex.: trocar os dados de exemplo por um estado vazio) — recebe null se ainda não existe.
 const mutateState = (fn) => {
   const cur = readState();
-  if (!cur) throw new Error('Estado do app ainda não existe');
-  const next = structuredClone(cur);
-  fn(next);
+  const draft = cur ? structuredClone(cur) : null;
+  const next = fn(draft) || draft;
+  if (!next) throw new Error('Estado do app ainda não existe');
   return writeState(next, cur);
 };
 const log = (m) => console.log(`[${new Date().toLocaleString('pt-BR')}] ${m}`);

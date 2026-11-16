@@ -935,3 +935,11 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .pix-add input { height: 30px; border: 1px dashed var(--border-2); border-radius: 99px; padding: 0 12px; background: transparent; font-size: 12.5px; flex: 1; min-width: 0; }
 .pix-add input:focus { border-style: solid; border-color: var(--blue); outline: none; }
 @media (max-width: 640px) { .pix-names { padding-left: 0; } .pix-add input { font-size: 16px; } }
+
+/* ---------- importar histórico / revisar por mês ---------- */
+.history-card { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; margin-bottom: 16px; }
+.history-card > svg { color: var(--blue); flex: none; }
+.history-card .grow { min-width: 220px; line-height: 1.45; }
+.history-card select { height: 32px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--card); color: var(--text); padding: 0 8px; font-size: 13px; max-width: 100%; }
+.rv-month { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 4px 10px; font-size: 14px; }
+.rv-month .btn { margin-left: auto; }
