@@ -94,16 +94,43 @@ export const personName = (state, id) => personOf(state, id)?.name || 'Alguém';
 // nome que aparece no banco (Pix) → pessoa. "Edsonia" casa com "Edsonia Oliveira Souza";
 // sem acento/maiúscula. Se mais de uma casar, vence o nome cadastrado mais completo.
 const normName = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter(Boolean);
-export function personByPixName(state, sender) {
+// quantas palavras do nome cadastrado mais completo que casa com quem mandou (0 = nenhum casa)
+function nameScore(names, sender) {
   const words = new Set(normName(sender));
-  if (!words.size) return undefined;
-  let best, bestLen = 0;
-  for (const p of state.people || [])
-    for (const n of p.pixNames || []) {
-      const t = normName(n);
-      if (t.length && t.every((w) => words.has(w)) && t.length > bestLen) { best = p; bestLen = t.length; }
-    }
+  if (!words.size) return 0;
+  let best = 0;
+  for (const n of names || []) {
+    const t = normName(n);
+    if (t.length && t.every((w) => words.has(w)) && t.length > best) best = t.length;
+  }
   return best;
+}
+export function personByPixName(state, sender) {
+  let best, bestLen = 0;
+  for (const p of state.people || []) { const l = nameScore(p.pixNames, sender); if (l > bestLen) { best = p; bestLen = l; } }
+  return best;
+}
+// fonte de renda de quem pagou: primeiro pelo CPF/CNPJ (aprendido no sync), depois pelo nome que aparece no banco
+export function sourceByPayer(state, sender, doc) {
+  const srcs = incomeSources(state);
+  if (doc) { const d = srcs.find((x) => (x.payerDocs || []).includes(doc)); if (d) return d; }
+  let best, bestLen = 0;
+  for (const x of srcs) { const l = nameScore(x.payerNames, sender); if (l > bestLen) { best = x; bestLen = l; } }
+  return best;
+}
+// quem mandou o dinheiro, a partir da descrição do lançamento ("Pix — Fulano" ou o próprio nome na TED)
+export const senderOf = (t) => (t.desc || '').match(/^Pix — (.+)$/)?.[1] || t.desc || '';
+// liga à fonte as entradas já lançadas de quem paga (ao cadastrar um nome novo): pelo nome e, a partir delas,
+// pelo CPF/CNPJ — pega o mesmo pagador quando o banco corta ou muda o nome. Já ficam classificadas (saem da revisão).
+export function tagIncomeTx(state, src) {
+  const free = (t) => t.type === 'in' && !t.reimbFrom && !t.incomeSource;
+  const docs = new Set(src.payerDocs || []);
+  for (const t of state.transactions || []) if (free(t) && t.payerDoc && nameScore(src.payerNames, senderOf(t))) docs.add(t.payerDoc);
+  if (docs.size) src.payerDocs = [...docs];
+  let n = 0;
+  for (const t of state.transactions || [])
+    if (free(t) && (nameScore(src.payerNames, senderOf(t)) || (t.payerDoc && docs.has(t.payerDoc)))) { t.incomeSource = src.id; delete t.review; n++; }
+  return n;
 }
 export const pixSender = (desc) => (desc || '').match(/^Pix — (.+)$/)?.[1] || '';
 export const othersPart = (i) => round2(i.part * (1 - myShare(i)));
@@ -137,6 +164,10 @@ export function migrate(s) {
         delete s.payments[M][k];
       }
     s.splitV2 = true;
+  }
+  if (s.income && !s.income.sources) {
+    s.income.sources = incomeSources(s);
+    delete s.income.parts; delete s.income.salary; delete s.income.salaryDay;
   }
   return s;
 }
@@ -238,13 +269,47 @@ export function cardUsed(state, card) {
   return round2(used);
 }
 
-// salário pode cair em várias datas: income.parts = [{ day, amount }]. Sem partes = valor único no salaryDay.
+// ---------- fontes de renda ("Minhas rendas") ----------
+// income.sources = [{ id, name, kind: 'fixa' | 'variavel', payerNames: [], payerDocs: [],
+//   parts: [{ day, amount }]   — fixa: valor certo, pode cair em várias datas
+//   day, estimate              — variável: dia em que costuma cair; previsão enquanto não há histórico }]
+// Renda extra lançada à mão continua em income.extras. Estado antigo (income.salary/parts) vira uma fonte fixa "Salário".
+export function incomeSources(state) {
+  const inc = state.income || {};
+  if (inc.sources) return inc.sources;
+  const parts = inc.parts?.length ? inc.parts : inc.salary ? [{ day: inc.salaryDay || 5, amount: inc.salary }] : [];
+  return parts.length ? [{ id: 'salario', name: 'Salário', kind: 'fixa', parts, payerNames: [] }] : [];
+}
+// créditos fixos do mês (todas as rendas fixas), por data
 export function salaryParts(state, M) {
-  const parts = state.income.parts?.length ? state.income.parts : state.income.salary ? [{ day: state.income.salaryDay || 5, amount: state.income.salary }] : [];
   const last = M ? daysInMonth(M) : 31;
-  return parts.map((p, i) => ({ ...p, idx: i, day: Math.min(p.day, last) })).sort((a, b) => a.day - b.day);
+  return incomeSources(state).filter((x) => x.kind === 'fixa')
+    .flatMap((x) => (x.parts || []).map((p, i) => ({ ...p, idx: i, sourceId: x.id, sourceName: x.name, of: x.parts.length, day: Math.min(p.day, last) })))
+    .sort((a, b) => a.day - b.day);
 }
 export const salaryTotal = (state) => round2(salaryParts(state).reduce((s, p) => s + p.amount, 0));
+export const sourceReceived = (state, src, M) =>
+  round2((state.transactions || []).filter((t) => t.type === 'in' && t.incomeSource === src.id && t.date.startsWith(M)).reduce((s, t) => s + t.amount, 0));
+// previsão da renda variável: média do que caiu nos 3 meses anteriores (meses antes do 1º recebimento não entram)
+export function sourceAverage(state, src, M) {
+  const months = (state.transactions || []).filter((t) => t.type === 'in' && t.incomeSource === src.id).map((t) => t.date.slice(0, 7)).sort();
+  if (!months.length) return null;
+  const win = [1, 2, 3].map((k) => addMonths(M, -k)).filter((m) => m >= months[0]);
+  if (!win.length) return null;
+  return round2(win.reduce((s, m) => s + sourceReceived(state, src, m), 0) / win.length);
+}
+// por fonte: quanto se espera no mês e quanto já caiu. Mês que já passou vale o que caiu de verdade.
+export function incomeForMonth(state, M) {
+  const past = M < currentMk();
+  return incomeSources(state).map((src) => {
+    if (src.kind === 'fixa') { const v = round2((src.parts || []).reduce((s, p) => s + p.amount, 0)); return { src, expected: v, received: null, estimated: false }; }
+    const received = sourceReceived(state, src, M);
+    const avg = sourceAverage(state, src, M);
+    const forecast = avg ?? (src.estimate || 0);
+    const expected = past ? received : round2(Math.max(received, forecast));
+    return { src, received, avg, forecast, expected, estimated: expected > received };
+  });
+}
 
 export function extrasForMonth(state, M) {
   return (state.income.extras || []).filter((e) => (e.recurring ? (!e.startMonth || e.startMonth <= M) : e.month === M));
@@ -278,14 +343,19 @@ export function monthSummary(state, M) {
   const cards = round2(cardsFull - cardsOthers);
   const tx = state.transactions.filter((t) => t.date.startsWith(M));
   // Pix/débito feito por outra pessoa não é gasto meu; dinheiro que alguém me devolve não é renda (os dois vão pro saldo devedor)
-  const extraIn = round2(extrasForMonth(state, M).reduce((s, e) => s + e.amount, 0) + tx.filter((t) => t.type === 'in' && !t.reimbFrom).reduce((s, t) => s + t.amount, 0));
+  // entrada ligada a uma fonte de renda já conta na fonte (fixa: no salário; variável: no recebido/previsto)
+  const extraIn = round2(extrasForMonth(state, M).reduce((s, e) => s + e.amount, 0) + tx.filter((t) => t.type === 'in' && !t.reimbFrom && !t.incomeSource).reduce((s, t) => s + t.amount, 0));
   const spent = round2(tx.filter((t) => t.type === 'out').reduce((s, t) => s + t.amount * myShare(t), 0));
-  const salary = salaryTotal(state);
-  const income = round2(salary + extraIn);
+  const srcs = incomeForMonth(state, M);
+  const salary = round2(srcs.filter((r) => r.src.kind === 'fixa').reduce((s, r) => s + r.expected, 0));
+  const variable = round2(srcs.filter((r) => r.src.kind !== 'fixa').reduce((s, r) => s + r.expected, 0));
+  const incomeEstimated = srcs.some((r) => r.estimated);
+  const work = round2(salary + variable); // renda do trabalho (fixa + variável), sem extras
+  const income = round2(work + extraIn);
   const diaADia = Math.max(state.dailyBudget || 0, spent);
   const pessoais = round2(pessoalBills + cards);
   const sobra = round2(income - casa - pessoais - diaADia);
-  return { salary, extraIn, income, casa, pessoalBills, cards, cardsFull, cardsOthers, pessoais, spent, diaADia, sobra };
+  return { salary, variable, work, incomeEstimated, extraIn, income, casa, pessoalBills, cards, cardsFull, cardsOthers, pessoais, spent, diaADia, sobra };
 }
 
 // tudo que outras pessoas me devem no mês M (contas em modo reembolso + itens da fatura que vence em M)
@@ -493,7 +563,7 @@ export function seedState() {
 export function emptyState() {
   return {
     version: 1, sample: false, people: [], profile: { name: 'Você' }, theme: 'light',
-    income: { salary: 0, extras: [] }, dailyBudget: 0, housingRef: 30,
+    income: { sources: [], extras: [] }, dailyBudget: 0, housingRef: 30,
     bills: [], overrides: {}, payments: {}, cards: [], purchases: [], transactions: [],
     reserve: { goal: 0, entries: [] },
   };

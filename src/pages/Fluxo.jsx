@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Plus } from 'lucide-react';
 import { useApp } from '../store.jsx';
 import { Money, Icon3D, Segmented, Check3, BillIcon, Empty } from '../ui.jsx';
-import { monthSummary, payables, extrasForMonth, brl, monthName, parseMk, daysInMonth, receivables, personName, salaryParts, myShare, peopleIn } from '../lib.js';
+import { monthSummary, payables, extrasForMonth, brl, monthName, parseMk, daysInMonth, receivables, personName, salaryParts, myShare, peopleIn, incomeForMonth, incomeSources } from '../lib.js';
 
 const WEEK = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
@@ -25,12 +25,17 @@ export default function Fluxo() {
   const [tab, setTab] = useState('todas');
   const s = monthSummary(state, M);
   const parts = salaryParts(state, M);
-  const salaryDay = parts[0]?.day || Math.min(state.income.salaryDay || 5, daysInMonth(M));
+  const salaryDay = parts[0]?.day || Math.min(5, daysInMonth(M));
   const rows = [];
-  parts.forEach((p, i) => rows.push({ id: `salary-${i}`, day: p.day, name: parts.length > 1 ? `Salário (${i + 1}ª parte)` : 'Salário', amount: p.amount, type: 'in', kind: 'fixed', icon: 'bank', sub: parts.length > 1 ? `${i + 1} de ${parts.length} créditos do mês` : 'salário' }));
+  parts.forEach((p) => rows.push({ id: `salary-${p.sourceId}-${p.idx}`, day: p.day, name: p.of > 1 ? `${p.sourceName} (${p.idx + 1}ª parte)` : p.sourceName, amount: p.amount, type: 'in', kind: 'fixed', icon: 'bank', sub: p.of > 1 ? `${p.idx + 1} de ${p.of} créditos do mês` : 'renda fixa' }));
+  // renda variável: o que já caiu aparece nos lançamentos; aqui entra só o que ainda falta pela previsão
+  for (const r of incomeForMonth(state, M).filter((r) => r.src.kind !== 'fixa' && r.estimated))
+    rows.push({ id: `var-${r.src.id}`, day: Math.min(r.src.day || salaryDay, daysInMonth(M)), name: `${r.src.name} — a receber`, amount: r.expected - r.received, type: 'in', kind: 'fixed', icon: 'bank', estimated: true,
+      sub: r.received ? `previsão ≈ ${brl(r.expected)} · já caiu ${brl(r.received)}` : r.avg != null ? 'previsão pela média dos últimos 3 meses' : 'previsão informada por você' });
+  const srcName = Object.fromEntries(incomeSources(state).map((x) => [x.id, x.name]));
   for (const e of extrasForMonth(state, M)) rows.push({ id: e.id, day: salaryDay, name: e.desc, amount: e.amount, type: 'in', kind: 'extra', icon: 'gift', sub: e.recurring ? 'renda extra mensal' : 'renda extra' });
   for (const t of state.transactions.filter((t) => t.date.startsWith(M)))
-    rows.push({ id: t.id, day: Number(t.date.slice(8)), name: t.desc, amount: t.amount, type: t.type, kind: 'tx', tx: t, icon: t.type === 'in' ? 'gift' : 'cart', sub: t.reimbFrom ? `devolução de ${personName(state, t.reimbFrom)}` : t.type === 'out' && myShare(t) < 1 ? (myShare(t) > 0 ? `${t.category} · dividido` : `por ${peopleIn(t).map((id) => personName(state, id)).join(', ')} · te devolve`) : t.category });
+    rows.push({ id: t.id, day: Number(t.date.slice(8)), name: t.desc, amount: t.amount, type: t.type, kind: 'tx', tx: t, icon: t.type === 'in' ? 'gift' : 'cart', sub: t.reimbFrom ? `devolução de ${personName(state, t.reimbFrom)}` : t.incomeSource && srcName[t.incomeSource] ? `renda · ${srcName[t.incomeSource]}` : t.type === 'out' && myShare(t) < 1 ? (myShare(t) > 0 ? `${t.category} · dividido` : `por ${peopleIn(t).map((id) => personName(state, id)).join(', ')} · te devolve`) : t.category });
   for (const r of receivables(state, M))
     rows.push({ id: `recv:${r.key}:${r.personId}`, day: r.day, name: `${personName(state, r.personId)} devolve — ${r.desc}`, amount: r.amount, type: 'in', kind: 'pay', paid: r.received, icon: 'users', sub: r.kind === 'card' ? `reembolso · fatura${r.inst ? (r.inst === 'mensal' ? ' · assinatura' : ` · parcela ${r.inst}`) : ''}` : 'reembolso no Pix', reimb: true });
   for (const p of payables(state, M).filter((p) => p.iPay))

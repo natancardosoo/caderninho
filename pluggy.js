@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
 import { PluggyClient } from 'pluggy-sdk';
-import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES, personByPixName, emptyState } from './src/lib.js';
+import { uid, round2, billsForMonth, invoiceTotal, isPaid, iPay, salaryParts, receivables, purchaseDueMonth, addMonths as addMonthsKey, CATEGORIES, personByPixName, sourceByPayer, emptyState, migrate } from './src/lib.js';
 
 const SYNC_HOUR = Number(process.env.PLUGGY_SYNC_HOUR || 18);
 const FIRST_SYNC_DAYS = 365; // primeira sincronização: busca o que a Pluggy guarda (até 12 meses) — pega parcelas de compras antigas
@@ -144,6 +144,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
   //   todas as parcelas (inclusive futuras) vêm como transações separadas com creditCardMetadata.
   // - compras em moeda estrangeira: usa amountInAccountCurrency (BRL).
   function apply(s, data, db, report) {
+    migrate(s); // estado ainda no formato antigo (ex.: renda sem "fontes") ganha o formato atual
     s.cards = s.cards || []; s.purchases = s.purchases || []; s.transactions = s.transactions || [];
     s.payments = s.payments || {}; s.overrides = s.overrides || {};
     const known = db.known;
@@ -256,6 +257,13 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
           const other = out ? pd.receiver : pd.payer;
           const otherName = titleCase(other?.name || (tx.description || '').split('|')[1] || '');
           const M = date.slice(0, 7);
+          // entrada de uma fonte de renda cadastrada (nome que aparece no banco ou CPF/CNPJ já visto)
+          const payerDoc = !out ? docOf(other) : '';
+          const src = !out ? sourceByPayer(s, otherName, payerDoc) : undefined;
+          if (src && payerDoc && !ownDocs.has(payerDoc) && !(src.payerDocs || []).includes(payerDoc)) src.payerDocs = [...(src.payerDocs || []), payerDoc];
+          const incomeSrc = src?.kind === 'variavel' ? src : undefined;
+          // reprocessamento da renda: o que antes foi tratado como salário só muda se agora casar com uma renda variável
+          if (db.recheck?.[tx.id] && !incomeSrc) { mark(tx.id, 'salario'); continue; }
 
           if (isInvestment(tx)) { mark(tx.id, 'investimento'); add('skipped'); continue; }
           if ((other && ownDocs.has(docOf(other))) || /same person/i.test(tx.category || '') || /MESMA_TITULARIDADE/i.test(tx.operationType || '') ||
@@ -267,7 +275,10 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
             if (c && !isPaid(s, M, `card:${c.id}`)) { setPaid(M, `card:${c.id}`); add('billsPaid'); }
             mark(tx.id, 'pagamento-fatura'); add('skipped'); continue;
           }
-          if (!out && (isSalary(tx) || salaryParts(s, M).some((p) => Math.abs(p.amount - value) <= Math.max(1, p.amount * 0.01)))) {
+          // renda fixa: já conta pelo valor cadastrado, o crédito no banco não entra de novo
+          // (sem renda fixa cadastrada, "folha de pagamento" é renda de verdade e entra como lançamento)
+          const fixed = salaryParts(s, M);
+          if (!out && !incomeSrc && (src?.kind === 'fixa' || (fixed.length && (isSalary(tx) || fixed.some((p) => Math.abs(p.amount - value) <= Math.max(1, p.amount * 0.01)))))) {
             mark(tx.id, 'salario'); add('skipped'); continue;
           }
 
@@ -290,7 +301,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
               if (b.estimated && !s.overrides[M]?.[b.id]) { s.overrides[M] = s.overrides[M] || {}; s.overrides[M][b.id] = value; }
               mark(tx.id, `conta:${b.id}`); continue;
             }
-          } else {
+          } else if (!incomeSrc) {
             // dinheiro recebido que bate com algo "a receber" do mês (reembolso de alguém)
             const rs = receivables(s, M);
             const r = rs.filter((r) => !r.received && Math.abs(r.amount - value) <= Math.max(1, r.amount * 0.01))
@@ -304,11 +315,17 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
           const desc = isPix(tx) ? (otherName ? `Pix — ${otherName}` : out ? 'Pix enviado' : 'Pix recebido') : cleanDesc(otherName || tx.merchant?.name || (tx.description || '').split('|')[0]);
           const type = out ? 'out' : 'in';
           const dup = s.transactions.find((t) => (!t.pluggyId || t.pluggyPending) && t.type === type && daysApart(t.date, date) <= 1 && Math.abs(t.amount - value) < 0.01);
-          if (dup) { if (!dup.pluggyId) add('linked'); dup.pluggyId = tx.id; dup.pluggyPending = pending || undefined; mark(tx.id, 'lancamento'); continue; }
+          if (dup) {
+            if (!dup.pluggyId) add('linked');
+            dup.pluggyId = tx.id; dup.pluggyPending = pending || undefined;
+            if (incomeSrc && !dup.reimbFrom && !dup.incomeSource) dup.incomeSource = incomeSrc.id;
+            mark(tx.id, 'lancamento'); continue;
+          }
           // Pix recebido de alguém que já te devolveu dinheiro antes (nome lembrado no app): já vem marcado como devolução
-          const reimbFrom = !out && otherName ? personByPixName(s, otherName)?.id : undefined;
-          s.transactions.push({ id: uid(), date, desc, amount: value, type, category: out ? toCategory(tx, desc) : 'Outros', src: 'pluggy', pluggyId: tx.id, pluggyPending: pending || undefined, bank, reimbFrom, review: true });
-          mark(tx.id, 'lancamento'); add('transactions');
+          const reimbFrom = !out && !incomeSrc && otherName ? personByPixName(s, otherName)?.id : undefined;
+          // renda variável reconhecida já entra confirmada (não precisa revisar)
+          s.transactions.push({ id: uid(), date, desc, amount: value, type, category: out ? toCategory(tx, desc) : 'Outros', src: 'pluggy', pluggyId: tx.id, pluggyPending: pending || undefined, bank, reimbFrom, incomeSource: incomeSrc?.id, payerDoc: payerDoc && !ownDocs.has(payerDoc) ? payerDoc : undefined, review: incomeSrc ? undefined : true });
+          mark(tx.id, 'lancamento'); add(incomeSrc ? 'income' : 'transactions');
         }
       }
     }
@@ -328,7 +345,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
       if (!cur || cur.sample) return { ok: false, error: 'O app ainda está com dados de exemplo. Use "Começar com meus dados" para apagá-los e importar seu histórico.' };
       try {
         const data = await fetchAll(db, from);
-        const report = { purchases: 0, transactions: 0, linked: 0, billsPaid: 0, skipped: 0, cardsCreated: 0 };
+        const report = { purchases: 0, transactions: 0, income: 0, linked: 0, billsPaid: 0, skipped: 0, cardsCreated: 0 };
         const errors = data.filter((e) => e.error).map((e) => `${e.item.name || e.item.id}: ${e.error}`);
         mutateState((s) => apply(s, data.filter((e) => !e.error), db, report));
         db.lastSync = startedAt;
@@ -377,6 +394,29 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
     save(db);
     const result = await sync('histórico', `${startM}-01`);
     return { ...result, reset, trackingStart: startM };
+  }
+
+  // ---------- reprocessar renda ----------
+  // Depois de cadastrar o nome de quem paga uma renda variável: revê, desde o início do acompanhamento, os créditos
+  // que antes foram tratados como salário (e por isso não entraram no app). Só os que casarem com uma renda variável
+  // mudam; o resto volta a ser salário, então nada passa a contar em dobro.
+  async function reprocessIncome() {
+    if (running) return { ok: false, error: 'Já tem uma sincronização em andamento.' };
+    const db = load();
+    const recheck = {};
+    for (const [id, why] of Object.entries(db.known)) if (why === 'salario') { recheck[id] = true; delete db.known[id]; }
+    db.recheck = recheck;
+    save(db);
+    const st = readState();
+    let result;
+    try { result = await sync('renda', `${st?.trackingStart || todayYmd().slice(0, 7)}-01`); }
+    finally {
+      const after = load();
+      for (const id of Object.keys(recheck)) if (!after.known[id]) after.known[id] = 'salario'; // fora do período buscado: continua como estava
+      delete after.recheck;
+      save(after);
+    }
+    return result;
   }
 
   // ---------- agendamento diário ----------
@@ -437,6 +477,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
         return json(res, 200, { ok: true });
       }
       if (p === '/sync' && req.method === 'POST') return json(res, 200, await sync('manual'));
+      if (p === '/reprocess-income' && req.method === 'POST') return json(res, 200, await reprocessIncome());
       if (p === '/history' && req.method === 'POST') { const { months } = await body(req); return json(res, 200, await importHistory(months)); }
       return json(res, 404, { error: 'not found' });
     } catch (e) {
@@ -451,7 +492,7 @@ export function setupPluggy({ dataDir, readState, mutateState, log = console.log
     const before = readState();
     const s = structuredClone(before);
     const data = await fetchAll(db);
-    const report = { purchases: 0, transactions: 0, linked: 0, billsPaid: 0, reimbursed: 0, skipped: 0, cardsCreated: 0 };
+    const report = { purchases: 0, transactions: 0, income: 0, linked: 0, billsPaid: 0, reimbursed: 0, skipped: 0, cardsCreated: 0 };
     apply(s, data.filter((e) => !e.error), db, report);
     const ids = (arr) => new Set((arr || []).map((x) => x.id));
     const oldP = ids(before.purchases); const oldT = ids(before.transactions);

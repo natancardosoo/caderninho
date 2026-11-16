@@ -18,7 +18,9 @@ export function AppProvider({ children }) {
   const [M, setM] = useState(currentMk());
   const [form, setForm] = useState(null); // {type, data}
   const [route, setRoute] = useState(() => location.hash.replace('#', '') || '/');
-  const [saveStatus, setSaveStatus] = useState('ok');
+  const [saveStatus, setSaveStatusRaw] = useState('ok');
+  const saveStatusRef = useRef('ok');
+  const setSaveStatus = (v) => { saveStatusRef.current = v; setSaveStatusRaw(v); };
   const stateRef = useRef(null);
   const revRef = useRef(0);
   const queue = useRef([]); // alterações locais ainda não confirmadas pelo servidor
@@ -121,6 +123,16 @@ export function AppProvider({ children }) {
     schedule();
   }, [schedule]);
 
+  // grava agora o que estiver pendente (antes de pedir algo ao servidor que depende dessas alterações)
+  const saveNow = useCallback(async () => {
+    clearTimeout(timer.current);
+    for (let i = 0; i < 40 && (queue.current.length || saving.current); i++) {
+      if (!saving.current) await flush();
+      if (queue.current.length || saving.current) await new Promise((r) => setTimeout(r, 150));
+      if (saveStatusRef.current === 'error') break;
+    }
+  }, [flush]);
+
   // substituir tudo (importar backup, começar do zero, dados de exemplo)
   const replaceState = useCallback((next) => {
     const snap = structuredClone(next);
@@ -136,7 +148,7 @@ export function AppProvider({ children }) {
 
   if (!state) return <div className="boot"><div className="spinner" /></div>;
   return (
-    <Ctx.Provider value={{ state, setState: replaceState, update, M, setM, form, setForm, openForm, route, go, togglePaid, saveStatus, refresh }}>
+    <Ctx.Provider value={{ state, setState: replaceState, update, M, setM, form, setForm, openForm, route, go, togglePaid, saveStatus, refresh, saveNow }}>
       {children}
     </Ctx.Provider>
   );

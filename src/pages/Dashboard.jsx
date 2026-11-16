@@ -33,7 +33,7 @@ function SaldoCard({ s }) {
         <div className="saldo-note">
           <b className={s.sobra >= 0 ? 'green' : 'red'}>
             {s.sobra >= 0 ? <ArrowUpRight size={16} strokeWidth={2.4} /> : <ArrowDownRight size={16} strokeWidth={2.4} />}
-            {s.sobra >= 0 ? `${pct(free)} do salário livre` : `faltam ${brl(-s.sobra)} este mês`}
+            {s.sobra >= 0 ? `${pct(free)} da renda livre` : `faltam ${brl(-s.sobra)} este mês`}
           </b>
           <span>{s.sobra >= 0 ? 'valor estimado após pagar todas as contas' : 'as contas passam da renda — vai sair da reserva'}</span>
         </div>
@@ -43,8 +43,8 @@ function SaldoCard({ s }) {
       </div>
       <div className="saldo-legend">
         <div className="lg clickable" onClick={() => go('/renda')}>
-          <small>{s.extraIn > 0 ? 'Renda do mês' : 'Salário'}</small>
-          <b>{brl(s.income)} <Pencil size={13} className="muted" /></b>
+          <small>{s.extraIn > 0 || s.variable > 0 ? 'Renda do mês' : 'Salário'}</small>
+          <b>{s.incomeEstimated ? '≈ ' : ''}{brl(s.income)} <Pencil size={13} className="muted" /></b>
         </div>
         <div className="lg"><small><i className="dot" style={{ background: 'var(--navy)' }} />Contas da casa</small><b>− {brl(s.casa)} <em>· {pct((s.casa / base) * 100)}</em></b></div>
         <div className="lg"><small><i className="dot" style={{ background: 'var(--blue)' }} />Contas pessoais</small><b>− {brl(s.pessoais)} <em>· {pct((s.pessoais / base) * 100)}</em></b></div>
@@ -61,7 +61,7 @@ function SaldoCard({ s }) {
           <div key={l} className="sl-row"><span><i className="dot" style={{ background: c }} />{l}</span><b>{brl(v)}</b><em>{pct((v / base) * 100)}</em></div>
         ))}
         <div className="sl-row strong"><span><i className="dot" style={{ background: 'var(--green)' }} />Sobra</span><b className={s.sobra >= 0 ? 'green' : 'red'}>{brl(s.sobra)}</b><em>{pct(free)}</em></div>
-        <button className="salary-pill" onClick={() => go('/renda')}><span>Renda</span><b>{brl(s.income)}</b><Pencil size={14} /></button>
+        <button className="salary-pill" onClick={() => go('/renda')}><span>Renda</span><b>{s.incomeEstimated ? '≈ ' : ''}{brl(s.income)}</b><Pencil size={14} /></button>
       </div>
     </section>
   );
@@ -262,7 +262,7 @@ function MoradiaCard({ M, s }) {
   const { state, go } = useApp();
   const [base, setBase] = useState('salario');
   const bills = billsForMonth(state, M).filter((b) => b.group === 'casa');
-  const income = base === 'salario' ? s.salary : s.income;
+  const income = base === 'salario' ? s.work : s.income; // "só salário" = renda do trabalho (fixa + variável), sem extras
   const p = income ? (s.casa / income) * 100 : 0;
   const ref = state.housingRef || 30;
   const scale = ref * 2;

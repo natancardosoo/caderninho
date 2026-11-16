@@ -4,7 +4,7 @@ import { useApp } from '../store.jsx';
 import { Empty } from '../ui.jsx';
 import { PageHead } from './Fluxo.jsx';
 import { PersonPicker } from '../people.jsx';
-import { reviewQueue, applyShares, sharesOf, personName, brl, fmtDate, todayStr, monthName, CATEGORIES } from '../lib.js';
+import { reviewQueue, applyShares, sharesOf, personName, brl, fmtDate, todayStr, monthName, CATEGORIES, incomeSources, sourceByPayer, senderOf } from '../lib.js';
 
 const WEEK = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 function dayLabel(date) {
@@ -36,11 +36,23 @@ export default function Revisar() {
   });
   // dinheiro que entrou: renda minha ou devolução de alguém
   const setFrom = (it, id) => edit(it, (r, s) => {
+    delete r.incomeSource;
     if (id === 'me') { delete r.reimbFrom; return; }
     r.reimbFrom = id;
     const sender = r.desc.match(/^Pix — (.+)$/)?.[1];
     const person = (s.people || []).find((p) => p.id === id);
     if (sender && person && !(person.pixNames || []).includes(sender)) person.pixNames = [...(person.pixNames || []), sender];
+  });
+
+  // dinheiro que entrou é de uma das minhas rendas: liga à renda e lembra o nome de quem pagou
+  const sources = incomeSources(state);
+  const setSource = (it, id) => edit(it, (r, s) => {
+    delete r.reimbFrom;
+    if (r.incomeSource === id) { delete r.incomeSource; return; }
+    r.incomeSource = id;
+    const src = (s.income.sources || []).find((x) => x.id === id);
+    const sender = senderOf(r);
+    if (src && sender && sourceByPayer(s, sender)?.id !== id) src.payerNames = [...(src.payerNames || []), sender];
   });
 
   const groups = [];
@@ -96,7 +108,7 @@ export default function Revisar() {
                 <div className="rv-field">
                   <small>{isIn ? 'É renda sua ou devolução de alguém?' : split ? 'Dividido entre várias pessoas (ajuste no lápis)' : 'Quem paga?'}</small>
                   {!split && (isIn
-                    ? <PersonPicker compact value={x.reimbFrom || 'me'} onChange={(id) => setFrom(it, id)} />
+                    ? <PersonPicker compact value={x.incomeSource ? 'none' : x.reimbFrom || 'me'} onChange={(id) => setFrom(it, id)} />
                     : <PersonPicker compact value={x.payer && x.payer !== 'split' ? x.payer : 'me'} onChange={(id) => setPayer(it, id)} />)}
                 </div>
                 <div className="rv-actions">
@@ -107,6 +119,17 @@ export default function Revisar() {
                   <button className="icon-btn ghost" title="Editar tudo" onClick={() => setForm({ type: it.kind, data: x })}><Pencil size={16} /></button>
                   <button className="btn small primary" onClick={() => confirm(it)}><Check size={15} /> Confirmar</button>
                 </div>
+                {isIn && sources.length > 0 && (
+                  <div className="rv-field">
+                    <small>Ou é de uma das suas rendas?</small>
+                    <div className="person-picker compact">
+                      {sources.map((src) => (
+                        <button key={src.id} type="button" className={`pchip ${x.incomeSource === src.id ? 'on' : ''}`} style={{ '--pc': 'var(--green)' }} onClick={() => setSource(it, src.id)}>{src.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {isIn && x.incomeSource && <small className="rv-note">Conta em {sources.find((y) => y.id === x.incomeSource)?.name || 'sua renda'}{sources.find((y) => y.id === x.incomeSource)?.kind === 'fixa' ? ' (já está no valor fixo, não soma de novo)' : ''}. Os próximos desse nome entram sozinhos.</small>}
                 {isIn && x.reimbFrom && <small className="rv-note">Abate do que {personName(state, x.reimbFrom)} te deve e não conta como renda.</small>}
                 {!isIn && !split && x.payer && x.payer !== 'me' && <small className="rv-note">Não conta como gasto seu: entra no que {personName(state, x.payer)} te deve.</small>}
               </div>

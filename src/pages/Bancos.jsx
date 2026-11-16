@@ -128,7 +128,7 @@ export default function Bancos() {
           {res && (
             <p className="note">
               {res.ok ? 'Última sincronização' : 'Última sincronização com problemas'} ({res.reason}, {when(res.at)}):{' '}
-              {res.error ? res.error : <>{res.purchases} compras e {res.transactions} lançamentos novos, {res.billsPaid} contas marcadas como pagas, {res.linked} já existiam no app, {res.skipped} ignorados (salário, investimentos, transferências entre suas contas, pagamento de fatura).</>}
+              {res.error ? res.error : <>{res.purchases} compras e {res.transactions} lançamentos novos,{res.income ? ` ${res.income} pagamentos de renda variável,` : ''} {res.billsPaid} contas marcadas como pagas, {res.linked} já existiam no app, {res.skipped} ignorados (renda fixa, investimentos, transferências entre suas contas, pagamento de fatura).</>}
               {res.errors?.length > 0 && <><br /><span className="red">{res.errors.join(' · ')}</span></>}
             </p>
           )}

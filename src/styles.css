@@ -943,3 +943,11 @@ button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .history-card select { height: 32px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--card); color: var(--text); padding: 0 8px; font-size: 13px; max-width: 100%; }
 .rv-month { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 4px 10px; font-size: 14px; }
 .rv-month .btn { margin-left: auto; }
+
+/* ---------- minhas rendas ---------- */
+.income-src { border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.is-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.is-head .is-name { flex: 1; min-width: 140px; font-weight: 600; }
+.is-forecast { font-size: 13px; line-height: 1.5; }
+.is-var .row2 { margin-top: 10px; }
+.income-src .is-names { padding-left: 0; }
